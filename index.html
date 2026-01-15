@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portfolio | Immersive Journey</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;700&family=Playfair+Display:italic@400;700&display=swap" rel="stylesheet">
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.9.1/gsap.min.js"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/framer-motion@10.16.4/dist/framer-motion.js"></script>
+    
+    <style>
+        html { scroll-behavior: smooth; cursor: none; }
+        body { 
+            background-color: #000; 
+            color: #e5e5e5; 
+            margin: 0;
+            overflow: hidden; /* 初始禁止捲動 */
+            font-family: 'Inter', sans-serif;
+        }
+
+        /* 3D 容器 */
+        #canvas-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 100; pointer-events: none; }
+        
+        /* 自定義滑鼠 */
+        #cursor-dot {
+            width: 8px; height: 8px; background: white; border-radius: 50%;
+            position: fixed; pointer-events: none; z-index: 9999;
+            transform: translate(-50%, -50%); transition: width 0.3s, height 0.3s, background 0.3s;
+        }
+        #cursor-outline {
+            width: 40px; height: 40px; border: 1px solid rgba(255,255,255,0.3); border-radius: 50%;
+            position: fixed; pointer-events: none; z-index: 9998;
+            transform: translate(-50%, -50%); transition: all 0.15s ease-out;
+        }
+
+        /* 背景設計 */
+        .bg-grid {
+            background-image: linear-gradient(to right, rgba(255,255,255,0.02) 1px, transparent 1px),
+                              linear-gradient(to bottom, rgba(255,255,255,0.02) 1px, transparent 1px);
+            background-size: 50px 50px;
+        }
+        .bg-noise {
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+            opacity: 0.04; pointer-events: none;
+        }
+        .backdrop-blur-md { backdrop-filter: blur(20px); }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; }
+    </style>
+</head>
+<body>
+    <div id="cursor-dot"></div>
+    <div id="cursor-outline"></div>
+    <div id="canvas-container"></div>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+        const { motion, AnimatePresence, useScroll, useSpring } = window.Motion;
+
+        const App = () => {
+            const [stage, setStage] = useState('loading'); // loading -> ready -> intro3d -> web
+            const [loadingProgress, setLoadingProgress] = useState(0);
+            const [activeProjectModal, setActiveProjectModal] = useState(false);
+            const [activeExpModal, setActiveExpModal] = useState(null);
+            const [activeCertModal, setActiveCertModal] = useState(null);
+
+            // Three.js Refs
+            const threeInstance = useRef({ scene: null, camera: null, renderer: null, tv: null, remote: null });
+
+            useEffect(() => {
+                const container = document.getElementById('canvas-container');
+                const scene = new THREE.Scene();
+                scene.background = new THREE.Color(0x050505);
+                
+                const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+                camera.position.set(-5, 3, 8);
+                camera.lookAt(0, 1, 0);
+
+                const renderer = new THREE.WebGLRenderer({ antialias: true });
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                renderer.setPixelRatio(window.devicePixelRatio);
+                container.appendChild(renderer.domElement);
+
+                scene.add(new THREE.AmbientLight(0xffffff, 0.2));
+                const pLight = new THREE.PointLight(0x3366ff, 1, 10);
+                pLight.position.set(2, 3, 2);
+                scene.add(pLight);
+
+                const floor = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), new THREE.MeshStandardMaterial({ color: 0x111111 }));
+                floor.rotation.x = -Math.PI / 2;
+                scene.add(floor);
+
+                const sofa = new THREE.Group();
+                const seat = new THREE.Mesh(new THREE.BoxGeometry(3, 0.8, 1.5), new THREE.MeshStandardMaterial({ color: 0x222222 }));
+                seat.position.y = 0.4;
+                const back = new THREE.Mesh(new THREE.BoxGeometry(3, 1.2, 0.4), new THREE.MeshStandardMaterial({ color: 0x222222 }));
+                back.position.set(0, 1, -0.6);
+                sofa.add(seat, back);
+                sofa.position.set(0, 0, 4);
+                scene.add(sofa);
+
+                const person = new THREE.Group();
+                person.add(new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.4, 1), new THREE.MeshStandardMaterial({ color: 0x0a0a0a })));
+                const head = new THREE.Mesh(new THREE.SphereGeometry(0.25), new THREE.MeshStandardMaterial({ color: 0x0a0a0a }));
+                head.position.y = 0.7;
+                person.add(head);
+                person.position.set(0, 1, 4.2);
+                scene.add(person);
+
+                const tv = new THREE.Group();
+                const frame = new THREE.Mesh(new THREE.BoxGeometry(3.6, 2, 0.1), new THREE.MeshStandardMaterial({ color: 0x000000 }));
+                const screen = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 1.8), new THREE.MeshBasicMaterial({ color: 0x000000 }));
+                screen.position.z = 0.06;
+                screen.name = "screen";
+                tv.add(frame, screen);
+                tv.position.set(0, 1.5, 0);
+                scene.add(tv);
+
+                const remote = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.05, 0.2), new THREE.MeshStandardMaterial({ color: 0x000000 }));
+                remote.position.set(0.4, 1.2, 4.5);
+                scene.add(remote);
+
+                threeInstance.current = { scene, camera, renderer, tv, remote };
+
+                const animate = () => {
+                    requestAnimationFrame(animate);
+                    if (camera && (stage === 'ready' || stage === 'loading')) {
+                        camera.position.x += Math.sin(Date.now() * 0.001) * 0.001;
+                    }
+                    renderer.render(scene, camera);
+                };
+                animate();
+
+                const handleResize = () => {
+                    camera.aspect = window.innerWidth / window.innerHeight;
+                    camera.updateProjectionMatrix();
+                    renderer.setSize(window.innerWidth, window.innerHeight);
+                };
+                window.addEventListener('resize', handleResize);
+                return () => window.removeEventListener('resize', handleResize);
+            }, []);
+
+            useEffect(() => {
+                const interval = setInterval(() => {
+                    setLoadingProgress(prev => {
+                        if (prev >= 100) {
+                            clearInterval(interval);
+                            setTimeout(() => setStage('ready'), 500);
+                            return 100;
+                        }
+                        return prev + Math.floor(Math.random() * 5) + 2;
+                    });
+                }, 80);
+                return () => clearInterval(interval);
+            }, []);
+
+            const start3DSequence = () => {
+                setStage('intro3d');
+                const { camera, tv, remote } = threeInstance.current;
+                const timeline = gsap.timeline();
+
+                timeline.to(remote.position, { y: 1.4, z: 4.3, duration: 1 });
+                timeline.to(tv.getObjectByName('screen').material.color, { r: 1, g: 1, b: 1, duration: 0.1 }, "+=0.2");
+                timeline.to(camera.position, { x: 0, y: 1.5, z: 1.3, duration: 2.5, ease: "expo.inOut" }, "-=0.2");
+                timeline.to("#canvas-container", { 
+                    opacity: 0, 
+                    duration: 0.8, 
+                    onComplete: () => {
+                        setStage('web');
+                        document.body.style.overflow = 'auto';
+                    }
+                });
+            };
+
+            useEffect(() => {
+                const dot = document.getElementById('cursor-dot');
+                const outline = document.getElementById('cursor-outline');
+                const moveCursor = (e) => {
+                    dot.style.left = `${e.clientX}px`;
+                    dot.style.top = `${e.clientY}px`;
+                    outline.animate({ left: `${e.clientX}px`, top: `${e.clientY}px` }, { duration: 500, fill: "forwards" });
+                };
+                window.addEventListener('mousemove', moveCursor);
+                return () => window.removeEventListener('mousemove', moveCursor);
+            }, []);
+
+            const IMAGES = {
+                google: "https://images.unsplash.com/photo-1573804633927-bfcbcd909acd?q=80&w=2454&auto=format&fit=crop",
+                cia: "https://images.unsplash.com/photo-1475721027785-f74dea327912?q=80&w=2670&auto=format&fit=crop",
+                tamkang: "https://images.unsplash.com/photo-1523050335456-cbb6e2801046?q=80&w=2670&auto=format&fit=crop",
+                n8n: "https://images.unsplash.com/photo-1518433278988-2b2f197c9430?q=80&w=2574&auto=format&fit=crop",
+                finance: "https://images.unsplash.com/photo-1554224155-6726b3ff858f?q=80&w=2511&auto=format&fit=crop",
+                toeic: "https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?q=80&w=2573&auto=format&fit=crop"
+            };
+
+            const projects = [
+                { id: 1, title: "AI Assistant", desc: "基於 LLM 的對話系統實作" },
+                { id: 2, title: "Data Dashboard", desc: "實時數據流監控面板" },
+                { id: 3, title: "Vibe Prototype", desc: "快速開發架構展示" },
+            ];
+
+            const experiences = [
+                { id: "tamkang", title: "淡江大學 國際企業學系", subtitle: "Bachelor of International Business", tag: "Education", summary: "深研國際市場分析與商業策略思維。", details: "在淡江大學期間，專注於國際市場趨勢分析、跨國企業策略規劃以及數據導向的商業邏輯。", image: IMAGES.tamkang },
+                { id: "cia", title: "CIA Language School", subtitle: "獨立公開英文演講", tag: "Public Speaking", summary: "於菲律賓期間完成獨立公開專題演講。", details: "挑戰並完成了一場面向大眾的獨立英文演講，磨練了高壓下的表達力。", image: IMAGES.cia },
+                { id: "google", title: "Google Career Certificate", subtitle: "Project Management", tag: "Professional", summary: "取得 Google 官方 PM 認證。", details: "掌握敏捷開發 (Agile) 與 Scrum 框架。", image: IMAGES.google },
+                { id: "n8n", title: "n8n Automation", subtitle: "Workflow Architect", tag: "Technical Skill", summary: "以最快速度將靈感轉化為解決方案。", details: "擅長透過 API 與自動化工具優化商業流程。", image: IMAGES.n8n }
+            ];
+
+            const certificateGroups = [
+                { category: "Google 數位實作", items: [
+                    { id: "goo-1", title: "Project Management", issuer: "Google", image: IMAGES.google, desc: "專案規劃與風險管理。" },
+                    { id: "goo-2", title: "IT Automation", issuer: "Google", image: IMAGES.google, desc: "Python 系統自動化實務。" }
+                ]},
+                { category: "金融專業資格", items: [
+                    { id: "fin-1", title: "證券商高級業務員", issuer: "證基會", image: IMAGES.finance, desc: "證券市場實務與法規。" },
+                    { id: "fin-2", title: "投信投顧業務員", issuer: "證基會", image: IMAGES.finance, desc: "資產配置與產品分析。" }
+                ]},
+                { category: "國際語言能力", items: [
+                    { id: "lang-1", title: "TOEIC 多益英語測驗", issuer: "ETS", image: IMAGES.toeic, desc: "國際商務溝通與閱讀能力認證。" }
+                ]}
+            ];
+
+            const { scrollYProgress } = useScroll();
+            const springProgress = useSpring(scrollYProgress, { stiffness: 100, damping: 30 });
+
+            return (
+                <div className="relative">
+                    {/* Stage: Loading Overlay */}
+                    <AnimatePresence>
+                        {(stage === 'loading' || stage === 'ready') && (
+                            <motion.div 
+                                key="loader"
+                                initial={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                className="fixed inset-0 z-[150] flex flex-col items-center justify-center bg-black"
+                            >
+                                <div className="w-64 space-y-4 text-center">
+                                    <div className="flex justify-between items-end mb-2">
+                                        <span className="text-[10px] tracking-widest text-zinc-500 uppercase">System Initializing</span>
+                                        <span className="text-xl font-light tabular-nums text-white">{loadingProgress}%</span>
+                                    </div>
+                                    <div className="h-0.5 w-full bg-zinc-800 overflow-hidden relative">
+                                        <motion.div className="absolute inset-y-0 left-0 bg-white" animate={{ width: `${loadingProgress}%` }} />
+                                    </div>
+                                    {stage === 'ready' && (
+                                        <motion.button 
+                                            initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+                                            onClick={start3DSequence}
+                                            className="w-full py-4 mt-8 border border-white/20 rounded-full text-[10px] tracking-[0.3em] uppercase hover:bg-white hover:text-black transition-all"
+                                        >
+                                            Enter Experience
+                                        </motion.button>
+                                    )}
+                                </div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+
+                    {/* Stage: Web Content */}
+                    <div id="web-content" className={`relative z-10 transition-opacity duration-1000 ${stage === 'web' ? 'opacity-100 visible' : 'opacity-0 invisible'}`}>
+                        {/* 背景層 */}
+                        <div className="fixed inset-0 z-0 pointer-events-none">
+                            <div className="absolute inset-0 bg-grid" />
+                            <div className="absolute inset-0 bg-noise" />
+                            <div className="absolute top-[5%] left-[5%] w-[50vw] h-[50vw] bg-blue-500/5 rounded-full blur-[140px]" />
+                        </div>
+
+                        <motion.div className="fixed top-0 left-0 right-0 h-0.5 bg-white z-[60] origin-left" style={{ scaleX: springProgress }} />
+
+                        <nav className="fixed top-0 w-full z-50">
+                            <div className="max-w-7xl mx-auto px-8 h-20 flex items-center justify-between border-b border-white/5 backdrop-blur-md">
+                                <div className="flex items-center gap-3 font-medium tracking-tighter text-lg uppercase">
+                                    <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
+                                    <span>Studio Portfolio</span>
+                                </div>
+                                <div className="flex items-center gap-8 text-[10px] tracking-[0.2em] font-medium uppercase text-zinc-500">
+                                    <a href="#projects">Projects</a>
+                                    <a href="#journey">Journey</a>
+                                    <a href="#certs">Certs</a>
+                                    <a href="mailto:connect@example.com" className="text-white border border-white/20 px-6 py-2 rounded-full bg-white/5">Connect</a>
+                                </div>
+                            </div>
+                        </nav>
+
+                        <main className="max-w-7xl mx-auto px-8">
+                            <section className="h-screen flex flex-col justify-center">
+                                <p className="text-zinc-500 font-mono text-xs mb-8 tracking-[0.4em] uppercase">Vibe Coder / Architect</p>
+                                <h1 className="text-[10vw] md:text-[8vw] font-light tracking-tighter leading-[0.8] mb-12">
+                                    DESIGNING <br />
+                                    <span className="font-serif italic font-normal text-zinc-500 text-[11vw] md:text-[9vw]">Momentum.</span>
+                                </h1>
+                                <div className="flex items-center gap-8">
+                                    <div className="h-px w-20 bg-zinc-700" />
+                                    <p className="max-w-md text-zinc-500 text-sm leading-relaxed">將商業邏輯轉化為直觀且具備高度自動化的數位體驗。</p>
+                                </div>
+                            </section>
+
+                            <section id="projects" className="mb-64">
+                                <div onClick={() => setActiveProjectModal(true)} className="group relative cursor-pointer border border-white/5 rounded-[2rem] overflow-hidden bg-white/[0.01] hover:bg-white/[0.03] transition-all duration-700">
+                                    <div className="py-40 px-12 flex flex-col items-center text-center">
+                                        <div className="w-16 h-16 border border-zinc-800 rounded-full flex items-center justify-center mb-10 text-2xl font-light text-zinc-500 group-hover:text-white group-hover:border-white/20 transition-all">+</div>
+                                        <h2 className="text-5xl font-light tracking-tight mb-4 text-white">Project Matrix</h2>
+                                        <p className="text-zinc-500 text-[10px] uppercase tracking-[0.5em] font-bold">Explore Artifacts</p>
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section id="journey" className="mb-64">
+                                <div className="grid grid-cols-1 lg:grid-cols-12 gap-20 border-t border-white/5 pt-16 relative">
+                                    <div className="lg:col-span-4 lg:sticky lg:top-32 h-fit z-10">
+                                        <h3 className="text-xs font-bold tracking-[0.6em] text-zinc-600 uppercase mb-8">Selected Journey</h3>
+                                        <p className="text-2xl font-light text-zinc-400 leading-tight">每一段經歷，都是為了建構更完整的技術視野。</p>
+                                    </div>
+                                    <div className="lg:col-span-8 space-y-4">
+                                        {experiences.map((exp) => (
+                                            <div key={exp.id} onClick={() => setActiveExpModal(exp)} className="group p-10 border border-transparent hover:border-white/10 rounded-3xl transition-all cursor-pointer hover:bg-white/[0.02]">
+                                                <div className="flex justify-between items-start">
+                                                    <div className="space-y-4">
+                                                        <span className="text-[10px] font-bold tracking-widest text-zinc-500 uppercase px-2 py-1 border border-zinc-800 rounded">{exp.tag}</span>
+                                                        <h4 className="text-3xl font-light group-hover:translate-x-2 transition-transform">{exp.title}</h4>
+                                                        <p className="text-zinc-500 max-w-lg">{exp.summary}</p>
+                                                    </div>
+                                                    <div className="opacity-0 group-hover:opacity-100 transition-all text-xl">→</div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section id="certs" className="mb-64">
+                                <div className="mb-24 flex flex-col md:flex-row md:items-end justify-between gap-8 border-t border-white/5 pt-16">
+                                    <h2 className="text-4xl font-light text-white">專業認證體系</h2>
+                                    <p className="text-zinc-500 text-sm max-w-sm">跨足專案管理、自動化開發與金融實務。</p>
+                                </div>
+                                <div className="space-y-32">
+                                    {certificateGroups.map((group, idx) => (
+                                        <div key={idx} className="grid grid-cols-1 lg:grid-cols-12 gap-12">
+                                            <div className="lg:col-span-3 text-xs font-bold tracking-[0.3em] uppercase text-zinc-600">{group.category}</div>
+                                            <div className="lg:col-span-9 grid grid-cols-1 md:grid-cols-2 gap-6">
+                                                {group.items.map((cert) => (
+                                                    <div key={cert.id} onClick={() => setActiveCertModal({...cert, category: group.category})} className="p-10 border border-white/5 rounded-2xl cursor-pointer hover:bg-white/[0.03] transition-all">
+                                                        <h5 className="text-xl font-light mb-2">{cert.title}</h5>
+                                                        <p className="text-zinc-600 text-[10px] tracking-widest uppercase font-bold">{cert.issuer}</p>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </section>
+
+                            <footer className="py-32 border-t border-white/5 text-center">
+                                <div className="text-[12vw] font-serif italic text-white/5 pointer-events-none select-none">Stay Forward.</div>
+                                <div className="text-[10px] tracking-[0.5em] text-zinc-600 uppercase font-bold mt-12">© 2024 / Digital Identity</div>
+                            </footer>
+                        </main>
+                    </div>
+
+                    {/* Modals */}
+                    <AnimatePresence>
+                        {activeProjectModal && (
+                            <motion.div key="proj-modal" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[200] flex items-center justify-center p-6">
+                                <div className="absolute inset-0 bg-black/80 backdrop-blur-3xl" onClick={() => setActiveProjectModal(false)} />
+                                <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="relative max-w-6xl w-full bg-zinc-900 border border-white/10 rounded-[2.5rem] p-12 lg:p-20">
+                                    <div className="flex justify-between items-start mb-20">
+                                        <h2 className="text-5xl font-light text-white">Project Matrix</h2>
+                                        <button onClick={() => setActiveProjectModal(false)} className="text-3xl font-thin">×</button>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                                        {projects.map((p) => (
+                                            <div key={p.id} className="p-10 border border-white/5 rounded-3xl hover:bg-white/[0.02]">
+                                                <h4 className="text-2xl font-light mb-2 text-white">{p.title}</h4>
+                                                <p className="text-zinc-500 text-sm">{p.desc}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </motion.div>
+                            </motion.div>
+                        )}
+
+                        {(activeExpModal || activeCertModal) && (
+                            <motion.div key="info-modal" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[200] flex items-center justify-center p-6">
+                                <div className="absolute inset-0 bg-black/80 backdrop-blur-3xl" onClick={() => { setActiveExpModal(null); setActiveCertModal(null); }} />
+                                <motion.div initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 50, opacity: 0 }} className="relative bg-zinc-900 border border-white/10 max-w-5xl w-full max-h-[85vh] overflow-hidden rounded-[2.5rem] flex flex-col lg:flex-row">
+                                    <div className="lg:w-1/2 bg-zinc-800 h-64 lg:h-auto">
+                                        <img src={(activeExpModal || activeCertModal).image} className="w-full h-full object-cover grayscale opacity-50" />
+                                    </div>
+                                    <div className="lg:w-1/2 p-12 lg:p-16 overflow-y-auto custom-scrollbar">
+                                        <button onClick={() => { setActiveExpModal(null); setActiveCertModal(null); }} className="float-right text-2xl font-thin">×</button>
+                                        <span className="text-[10px] font-bold tracking-[0.3em] uppercase text-zinc-500">{(activeExpModal || activeCertModal).tag || (activeExpModal || activeCertModal).category}</span>
+                                        <h2 className="text-4xl font-light text-white my-8">{(activeExpModal || activeCertModal).title}</h2>
+                                        <p className="text-zinc-400 leading-relaxed">{(activeExpModal || activeCertModal).details || (activeExpModal || activeCertModal).desc}</p>
+                                    </div>
+                                </motion.div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
