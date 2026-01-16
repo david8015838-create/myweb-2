@@ -88,6 +88,18 @@
                 overflow-x: hidden;
                 width: 100%;
             }
+            nav {
+                padding-left: 1rem;
+                padding-right: 1rem;
+            }
+            nav .max-w-7xl {
+                padding-left: 0;
+                padding-right: 0;
+            }
+            nav .flex.items-center.gap-8 {
+                gap: 0.5rem;
+                flex-wrap: wrap;
+            }
         }
         
         /* 防止模態框滾動穿透 */
@@ -489,24 +501,25 @@
                         <motion.div className="fixed top-0 left-0 right-0 h-0.5 bg-white z-[60] origin-left" style={{ scaleX: springProgress }} />
 
                         <nav className="fixed top-0 w-full z-50">
-                            <div className="max-w-7xl mx-auto px-8 h-20 flex items-center justify-between border-b border-white/5 backdrop-blur-md">
-                                <div className="flex items-center gap-3 font-medium tracking-tighter text-lg uppercase">
+                            <div className="max-w-7xl mx-auto px-4 md:px-8 h-16 md:h-20 flex items-center justify-between border-b border-white/5 backdrop-blur-md">
+                                <div className="flex items-center gap-2 md:gap-3 font-medium tracking-tighter text-sm md:text-lg uppercase">
                                     <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
-                                    <span>Studio Portfolio</span>
+                                    <span className="hidden sm:inline">Studio Portfolio</span>
+                                    <span className="sm:hidden">Portfolio</span>
                                 </div>
-                                <div className="flex items-center gap-8 text-[10px] tracking-[0.2em] font-medium uppercase text-zinc-500">
-                                    <a href="#projects">Projects</a>
-                                    <a href="#journey">Journey</a>
-                                    <a href="#certs">Certs</a>
-                                    <a href="mailto:connect@example.com" className="text-white border border-white/20 px-6 py-2 rounded-full bg-white/5">Connect</a>
+                                <div className="flex items-center gap-2 md:gap-8 text-[8px] md:text-[10px] tracking-[0.2em] font-medium uppercase text-zinc-500">
+                                    <a href="#projects" className="hidden md:inline">Projects</a>
+                                    <a href="#journey" className="hidden md:inline">Journey</a>
+                                    <a href="#certs" className="hidden md:inline">Certs</a>
+                                    <a href="mailto:connect@example.com" className="text-white border border-white/20 px-3 md:px-6 py-1 md:py-2 rounded-full bg-white/5 text-[8px] md:text-[10px]">Connect</a>
                                 </div>
                             </div>
                         </nav>
 
-                        <main className="max-w-7xl mx-auto px-8">
-                            <section className="min-h-screen flex flex-col justify-center pb-32">
+                        <main className="max-w-7xl mx-auto px-4 md:px-8">
+                            <section className="min-h-screen flex flex-col justify-center pb-16 md:pb-32 pt-20 md:pt-0">
                                 <p className="text-zinc-500 font-mono text-xs mb-8 tracking-[0.4em] uppercase">Vibe Coder / Architect</p>
-                                <h1 className="text-[10vw] md:text-[8vw] font-light tracking-tighter leading-[0.8] mb-12">
+                                <h1 className="text-[10vw] md:text-[8vw] font-light tracking-tighter leading-[0.8] mb-8 md:mb-12">
                                     DESIGNING <br />
                                     <span className="font-serif italic font-normal text-zinc-500 text-[11vw] md:text-[9vw]">Momentum.</span>
                                 </h1>
@@ -610,10 +623,15 @@
                                 exit={{ opacity: 0 }} 
                                 className="fixed inset-0 z-[200] flex items-center justify-center p-4 md:p-6"
                                 onAnimationStart={() => document.body.classList.add('modal-open')}
-                                onAnimationComplete={() => {}}
-                                onExitComplete={() => document.body.classList.remove('modal-open')}
+                                onExitComplete={() => {
+                                    document.body.classList.remove('modal-open');
+                                    setActiveProjectModal(false);
+                                }}
                             >
-                                <div className="absolute inset-0 bg-black/80 backdrop-blur-3xl" onClick={() => setActiveProjectModal(false)} />
+                                <div className="absolute inset-0 bg-black/80 backdrop-blur-3xl" onClick={() => {
+                                    setActiveProjectModal(false);
+                                    document.body.classList.remove('modal-open');
+                                }} />
                                 <motion.div 
                                     initial={{ scale: 0.9, opacity: 0 }} 
                                     animate={{ scale: 1, opacity: 1 }} 
@@ -623,7 +641,10 @@
                                 >
                                     <div className="flex justify-between items-start mb-12 md:mb-20">
                                         <h2 className="text-3xl md:text-5xl font-light text-white">Project Matrix</h2>
-                                        <button onClick={() => setActiveProjectModal(false)} className="text-3xl font-thin hover:text-white transition">×</button>
+                                        <button onClick={() => {
+                                            setActiveProjectModal(false);
+                                            document.body.classList.remove('modal-open');
+                                        }} className="text-3xl font-thin hover:text-white transition">×</button>
                                     </div>
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
                                         {projects.map((p) => (
@@ -670,9 +691,15 @@
                                 exit={{ opacity: 0 }} 
                                 className="fixed inset-0 z-[220] flex items-center justify-center p-2 md:p-4 lg:p-6"
                                 onAnimationStart={() => document.body.classList.add('modal-open')}
-                                onExitComplete={() => document.body.classList.remove('modal-open')}
+                                onExitComplete={() => {
+                                    document.body.classList.remove('modal-open');
+                                }}
                             >
-                                <div className="absolute inset-0 bg-black/80 backdrop-blur-3xl" onClick={() => setActiveProjectView(null)} />
+                                <div className="absolute inset-0 bg-black/80 backdrop-blur-3xl" onClick={() => {
+                                    setActiveProjectView(null);
+                                    setActiveProjectModal(false);
+                                    document.body.classList.remove('modal-open');
+                                }} />
                                 <motion.div 
                                     initial={{ y: 40, opacity: 0 }} 
                                     animate={{ y: 0, opacity: 1 }} 
@@ -681,15 +708,23 @@
                                     onClick={(e) => e.stopPropagation()}
                                 >
                                     <div className="flex justify-between items-center px-4 md:px-6 lg:px-8 py-4 md:py-6 border-b border-white/10 flex-shrink-0">
-                                        <button onClick={() => { setActiveProjectView(null); setActiveProjectModal(true); }} className="text-sm text-zinc-400 hover:text-white transition mr-4">← 返回</button>
+                                        <button onClick={() => { 
+                                            setActiveProjectView(null);
+                                            setActiveProjectModal(true);
+                                            document.body.classList.remove('modal-open');
+                                        }} className="text-sm text-zinc-400 hover:text-white transition mr-4">← 返回</button>
                                         <h3 className="text-xl md:text-2xl font-light text-white flex-1 text-center">{activeProjectView.title}</h3>
-                                        <button onClick={() => { setActiveProjectView(null); setActiveProjectModal(false); }} className="text-2xl font-thin hover:text-white transition ml-4">×</button>
+                                        <button onClick={() => { 
+                                            setActiveProjectView(null);
+                                            setActiveProjectModal(false);
+                                            document.body.classList.remove('modal-open');
+                                        }} className="text-2xl font-thin hover:text-white transition ml-4">×</button>
                                     </div>
                                     <div className="grid grid-cols-1 lg:grid-cols-2 flex-1 overflow-hidden min-h-0">
-                                        <div className="bg-zinc-800 overflow-hidden flex items-center justify-center min-h-[40vh] lg:min-h-0">
-                                            <iframe src={activeProjectView.url} className="w-full h-full min-h-[40vh] lg:min-h-0 border-0 bg-black" />
+                                        <div className="bg-zinc-800 overflow-hidden flex items-center justify-center min-h-[40vh] lg:min-h-0" style={{ maxHeight: 'calc(95vh - 80px)' }}>
+                                            <iframe src={activeProjectView.url} className="w-full h-full min-h-[40vh] lg:min-h-0 border-0 bg-black" style={{ maxHeight: '100%', width: '100%' }} />
                                         </div>
-                                        <div className="p-4 md:p-6 lg:p-8 lg:p-10 overflow-y-auto custom-scrollbar" onWheel={(e) => e.stopPropagation()}>
+                                        <div className="p-4 md:p-6 lg:p-8 lg:p-10 overflow-y-auto custom-scrollbar" onWheel={(e) => e.stopPropagation()} style={{ maxHeight: 'calc(95vh - 80px)' }}>
                                             <h4 className="text-lg md:text-xl font-light text-white mb-4">功能特色</h4>
                                             <ul className="space-y-2 text-zinc-400 text-sm">
                                                 {activeProjectView.features.map((f, idx) => (
