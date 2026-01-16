@@ -135,11 +135,13 @@
             const [typewriterText2, setTypewriterText2] = useState(''); // 第二行文字
             const [activeProjectModal, setActiveProjectModal] = useState(false);
             const [activeProjectView, setActiveProjectView] = useState(null);
+            const [activeProjectInfo, setActiveProjectInfo] = useState(null); // 顯示項目功能介紹
             const [activeExpModal, setActiveExpModal] = useState(null);
             const [activeCertModal, setActiveCertModal] = useState(null);
-            const [iframeScale, setIframeScale] = useState(0.6);
+            const [iframeScale, setIframeScale] = useState(0.85);
             const [journeyDescription, setJourneyDescription] = useState('');
             const journeyDescriptionRef = useRef(null);
+            const iframeRef = useRef(null);
             
             // 經歷描述的打字機效果
             const journeyInView = useInView(journeyDescriptionRef, { once: false, amount: 0.1 });
@@ -173,17 +175,160 @@
                     
                     if (isMobile) {
                         // 手機：使用較小的縮放，讓內容完整顯示
-                        setIframeScale(0.6);
+                        setIframeScale(0.85);
                     } else {
                         // 電腦：使用與手機相同的縮放比例，確保內容完整顯示
                         // 這樣可以確保在電腦上也能看到完整的小程序內容
-                        setIframeScale(0.6);
+                        setIframeScale(0.85);
                     }
                 };
                 
                 updateScale();
                 window.addEventListener('resize', updateScale);
                 return () => window.removeEventListener('resize', updateScale);
+            }, [activeProjectView]);
+
+            // ESC 鍵處理：返回 Project Matrix 頁面
+            useEffect(() => {
+                const handleEscKey = (e) => {
+                    if (e.key === 'Escape' && activeProjectView) {
+                        // 返回 Project Matrix 頁面
+                        setActiveProjectView(null);
+                        setActiveProjectModal(true);
+                        setTimeout(() => {
+                            document.body.classList.remove('modal-open');
+                            document.body.style.overflow = '';
+                            document.body.style.position = '';
+                            document.body.style.width = '';
+                            document.body.style.height = '';
+                        }, 100);
+                    }
+                };
+                
+                if (activeProjectView) {
+                    window.addEventListener('keydown', handleEscKey);
+                    return () => window.removeEventListener('keydown', handleEscKey);
+                }
+            }, [activeProjectView]);
+
+            // 注入預設數據到小程序 - 直接寫入 localStorage
+            useEffect(() => {
+                if (!activeProjectView || !activeProjectView.demoData) return;
+
+                const injectDemoData = () => {
+                    const iframe = iframeRef.current;
+                    if (!iframe) return;
+
+                    try {
+                        // 方式1: 通過 postMessage 發送數據（多次重試確保成功）
+                        const sendData = () => {
+                            try {
+                                iframe.contentWindow.postMessage({
+                                    type: 'LOAD_DEMO_DATA',
+                                    source: 'portfolio-demo',
+                                    data: activeProjectView.demoData,
+                                    projectId: activeProjectView.id,
+                                    projectTitle: activeProjectView.title
+                                }, '*');
+                            } catch (e) {
+                                console.log('postMessage 發送失敗:', e);
+                            }
+                        };
+
+                        // 立即發送
+                        sendData();
+                        
+                        // 延遲發送多次，確保小程序已初始化
+                        const delays = [500, 1000, 2000, 3000, 5000];
+                        delays.forEach(delay => {
+                            setTimeout(sendData, delay);
+                        });
+
+                        // 方式2: 嘗試直接訪問 localStorage（如果同源或允許）
+                        const tryDirectStorage = () => {
+                            try {
+                                const iframeWindow = iframe.contentWindow;
+                                if (iframeWindow && iframeWindow.localStorage) {
+                                    // 根據不同項目存儲不同的數據
+                                    if (activeProjectView.id === 1) {
+                                        // Ledger App - 使用小程序可能使用的 key
+                                        const storageKeys = [
+                                            'ledger-budget', 'ledger-transactions', 'ledger-creditCards', 
+                                            'ledger-recurringTransactions', 'ledger-data', 'ledger-app-data',
+                                            'budget', 'transactions', 'creditCards', 'recurringTransactions'
+                                        ];
+                                        
+                                        // 嘗試多種可能的 key 格式
+                                        iframeWindow.localStorage.setItem('ledger-budget', JSON.stringify(activeProjectView.demoData.budget));
+                                        iframeWindow.localStorage.setItem('ledger-transactions', JSON.stringify(activeProjectView.demoData.transactions));
+                                        iframeWindow.localStorage.setItem('ledger-creditCards', JSON.stringify(activeProjectView.demoData.creditCards));
+                                        iframeWindow.localStorage.setItem('ledger-recurringTransactions', JSON.stringify(activeProjectView.demoData.recurringTransactions));
+                                        iframeWindow.localStorage.setItem('ledger-data', JSON.stringify(activeProjectView.demoData));
+                                        iframeWindow.localStorage.setItem('ledger-demo-loaded', 'true');
+                                    } else if (activeProjectView.id === 2) {
+                                        // StockLens
+                                        iframeWindow.localStorage.setItem('stocklens-assets', JSON.stringify(activeProjectView.demoData.assets));
+                                        iframeWindow.localStorage.setItem('stocklens-compoundInterest', JSON.stringify(activeProjectView.demoData.compoundInterest));
+                                        iframeWindow.localStorage.setItem('stocklens-data', JSON.stringify(activeProjectView.demoData));
+                                        iframeWindow.localStorage.setItem('stocklens-demo-loaded', 'true');
+                                        // 也嘗試其他可能的 key
+                                        iframeWindow.localStorage.setItem('assets', JSON.stringify(activeProjectView.demoData.assets));
+                                        iframeWindow.localStorage.setItem('compoundInterest', JSON.stringify(activeProjectView.demoData.compoundInterest));
+                                    } else if (activeProjectView.id === 3) {
+                                        // SplitWise Pro
+                                        iframeWindow.localStorage.setItem('splitwise-roomId', activeProjectView.demoData.roomId);
+                                        iframeWindow.localStorage.setItem('splitwise-roomName', activeProjectView.demoData.roomName);
+                                        iframeWindow.localStorage.setItem('splitwise-members', JSON.stringify(activeProjectView.demoData.members));
+                                        iframeWindow.localStorage.setItem('splitwise-expenses', JSON.stringify(activeProjectView.demoData.expenses));
+                                        iframeWindow.localStorage.setItem('splitwise-settlements', JSON.stringify(activeProjectView.demoData.settlements));
+                                        iframeWindow.localStorage.setItem('splitwise-data', JSON.stringify(activeProjectView.demoData));
+                                        iframeWindow.localStorage.setItem('splitwise-demo-loaded', 'true');
+                                        // 也嘗試其他可能的 key
+                                        iframeWindow.localStorage.setItem('roomId', activeProjectView.demoData.roomId);
+                                        iframeWindow.localStorage.setItem('members', JSON.stringify(activeProjectView.demoData.members));
+                                        iframeWindow.localStorage.setItem('expenses', JSON.stringify(activeProjectView.demoData.expenses));
+                                    }
+                                    console.log('數據已成功寫入 localStorage');
+                                }
+                            } catch (e) {
+                                // 跨域限制，無法直接訪問 localStorage
+                                console.log('無法直接訪問 iframe localStorage（跨域限制），使用 postMessage 方式');
+                            }
+                        };
+
+                        // 嘗試直接寫入，多次重試
+                        tryDirectStorage();
+                        setTimeout(tryDirectStorage, 1000);
+                        setTimeout(tryDirectStorage, 2000);
+                        setTimeout(tryDirectStorage, 3000);
+
+                        // 方式3: 通過 URL 參數傳遞（已在 iframe src 中處理）
+                    } catch (error) {
+                        console.log('注入數據時發生錯誤:', error);
+                    }
+                };
+
+                // 監聽 iframe 加載完成
+                const iframe = iframeRef.current;
+                if (iframe) {
+                    const handleLoad = () => {
+                        // 延遲注入，確保小程序已完全加載
+                        setTimeout(injectDemoData, 500);
+                        setTimeout(injectDemoData, 1500);
+                        setTimeout(injectDemoData, 3000);
+                    };
+
+                    if (iframe.contentDocument && iframe.contentDocument.readyState === 'complete') {
+                        // 已經加載完成，直接注入
+                        handleLoad();
+                    } else {
+                        // 等待加載完成
+                        iframe.addEventListener('load', handleLoad);
+                        return () => {
+                            iframe.removeEventListener('load', handleLoad);
+                        };
+                    }
+                }
             }, [activeProjectView]);
 
             const threeInstance = useRef({ scene: null, camera: null, renderer: null, tv: null, noiseCanvas: null, noiseTex: null, noiseCtx: null, staticActive: false });
@@ -444,12 +589,12 @@
                 }
                 console.log('Starting 3D animation sequence...');
                 
-                const screen = tv.getObjectByName('screen');
+                    const screen = tv.getObjectByName('screen');
                 if (!screen) return;
                 
                 // 設置屏幕為雜訊材質
                 screen.material = new THREE.MeshBasicMaterial({ color: 0xaaaaaa, map: noiseTex });
-                threeInstance.current.staticActive = true;
+                    threeInstance.current.staticActive = true;
                 
                 // 添加電視發光效果（點光源）
                 let tvLight = scene.getObjectByName('tvLight');
@@ -618,15 +763,148 @@
                 cebu: "Cebu internantional academy畢業證書.jpg",
                 trust: "信託業務專業.JPG",
                 bankControl: "銀行內部控制與內部稽核.JPG",
-                credit: "初階授信人員.JPG"
+                credit: "初階授信人員.JPG",
+                // 證照官方icon
+                iconGoogle: "google project management.JPG", // 如果Google有專門的icon文件，請替換此處
+                iconTrust: "信託.jpg",
+                iconBank: "銀行、授信.webp",
+                iconToeic: "多益.webp",
+                iconCia: "cia.jpg",
+                iconThreads: "threads.png",
+                profilePhoto: "IMG_7839.JPG"
             };
 
             const projects = [
                 { 
                     id: 1, 
-                    title: "Ledger - Personal Finance", 
+                    title: "Ledger", 
                     url: "https://david8015838-create.github.io/ledger-app/",
                     desc: "個人財務管理與信用卡分期追蹤",
+                    demoData: {
+                        // 預設預算
+                        budget: {
+                            total: 50000,
+                            currentMonth: new Date().getMonth() + 1,
+                            currentYear: new Date().getFullYear()
+                        },
+                        // 預設交易記錄（涵蓋各種情況）
+                        transactions: [
+                            // 現金交易
+                            { id: 't1', date: '2024-01-05', amount: 150, currency: 'TWD', category: '飲食', note: '早餐 - 麥當勞', paymentMethod: 'cash' },
+                            { id: 't2', date: '2024-01-05', amount: 80, currency: 'TWD', category: '交通', note: '捷運', paymentMethod: 'cash' },
+                            { id: 't3', date: '2024-01-06', amount: 350, currency: 'TWD', category: '飲食', note: '午餐 - 日式料理', paymentMethod: 'cash' },
+                            { id: 't4', date: '2024-01-07', amount: 1200, currency: 'TWD', category: '交通', note: '計程車費', paymentMethod: 'cash' },
+                            { id: 't5', date: '2024-01-08', amount: 2500, currency: 'TWD', category: '購物', note: 'Uniqlo 衣服', paymentMethod: 'cash' },
+                            { id: 't6', date: '2024-01-10', amount: 180, currency: 'TWD', category: '飲食', note: '星巴克咖啡', paymentMethod: 'cash' },
+                            { id: 't7', date: '2024-01-12', amount: 800, currency: 'TWD', category: '娛樂', note: '電影票', paymentMethod: 'cash' },
+                            { id: 't8', date: '2024-01-15', amount: 450, currency: 'TWD', category: '飲食', note: '晚餐 - 火鍋', paymentMethod: 'cash' },
+                            { id: 't9', date: '2024-01-18', amount: 1200, currency: 'TWD', category: '醫療', note: '看診費', paymentMethod: 'cash' },
+                            { id: 't10', date: '2024-01-20', amount: 3000, currency: 'TWD', category: '購物', note: '3C 產品', paymentMethod: 'cash' },
+                            // 信用卡交易 - 無分期
+                            { id: 't11', date: '2024-01-03', amount: 5000, currency: 'TWD', category: '購物', note: '網購 - 家電', paymentMethod: 'credit', creditCardId: 'cc1', installments: 1, interestRate: 0 },
+                            { id: 't12', date: '2024-01-09', amount: 2800, currency: 'TWD', category: '娛樂', note: 'KTV 包廂', paymentMethod: 'credit', creditCardId: 'cc1', installments: 1, interestRate: 0 },
+                            { id: 't13', date: '2024-01-14', amount: 1500, currency: 'TWD', category: '飲食', note: '高級餐廳', paymentMethod: 'credit', creditCardId: 'cc1', installments: 1, interestRate: 0 },
+                            // 信用卡交易 - 有分期
+                            { id: 't14', date: '2024-01-02', amount: 15000, currency: 'TWD', category: '購物', note: 'iPhone 15 Pro', paymentMethod: 'credit', creditCardId: 'cc1', installments: 12, interestRate: 6.5 },
+                            { id: 't15', date: '2024-01-11', amount: 8000, currency: 'TWD', category: '購物', note: '筆電', paymentMethod: 'credit', creditCardId: 'cc1', installments: 6, interestRate: 5.5 },
+                            { id: 't16', date: '2024-01-16', amount: 12000, currency: 'TWD', category: '購物', note: '家具', paymentMethod: 'credit', creditCardId: 'cc1', installments: 24, interestRate: 8.0 },
+                            // 多幣種交易
+                            { id: 't17', date: '2024-01-04', amount: 50, currency: 'USD', category: '購物', note: 'Amazon 購物', paymentMethod: 'credit', creditCardId: 'cc2', installments: 1, interestRate: 0 },
+                            { id: 't18', date: '2024-01-13', amount: 100, currency: 'USD', category: '娛樂', note: 'Netflix 訂閱', paymentMethod: 'credit', creditCardId: 'cc2', installments: 1, interestRate: 0 },
+                            { id: 't19', date: '2024-01-19', amount: 200, currency: 'JPY', category: '飲食', note: '日本餐廳', paymentMethod: 'cash' },
+                            // 上個月的交易
+                            { id: 't20', date: '2023-12-25', amount: 5000, currency: 'TWD', category: '購物', note: '聖誕禮物', paymentMethod: 'credit', creditCardId: 'cc1', installments: 3, interestRate: 4.5 },
+                            { id: 't21', date: '2023-12-20', amount: 3000, currency: 'TWD', category: '娛樂', note: '跨年活動', paymentMethod: 'cash' },
+                            { id: 't22', date: '2023-12-15', amount: 8000, currency: 'TWD', category: '購物', note: '年終購物', paymentMethod: 'credit', creditCardId: 'cc1', installments: 1, interestRate: 0 }
+                        ],
+                        // 預設信用卡
+                        creditCards: [
+                            {
+                                id: 'cc1',
+                                name: '花旗現金回饋卡',
+                                dueDate: 15,
+                                paymentInterval: 30,
+                                initialBalance: 0,
+                                repayments: [
+                                    { date: '2023-12-15', amount: 12000 },
+                                    { date: '2023-11-15', amount: 8500 }
+                                ]
+                            },
+                            {
+                                id: 'cc2',
+                                name: '國泰世華卡',
+                                dueDate: 25,
+                                paymentInterval: 30,
+                                initialBalance: 5000,
+                                repayments: [
+                                    { date: '2023-12-25', amount: 3000 },
+                                    { date: '2023-11-25', amount: 2000 }
+                                ]
+                            }
+                        ],
+                        // 預設定期交易
+                        recurringTransactions: [
+                            {
+                                id: 'r1',
+                                name: 'Netflix 月費',
+                                amount: 330,
+                                currency: 'TWD',
+                                category: '娛樂',
+                                frequency: 'monthly',
+                                startDate: '2024-01-01',
+                                nextDate: '2024-02-01',
+                                paymentMethod: 'credit',
+                                creditCardId: 'cc1'
+                            },
+                            {
+                                id: 'r2',
+                                name: 'Spotify 月費',
+                                amount: 149,
+                                currency: 'TWD',
+                                category: '娛樂',
+                                frequency: 'monthly',
+                                startDate: '2024-01-01',
+                                nextDate: '2024-02-01',
+                                paymentMethod: 'credit',
+                                creditCardId: 'cc1'
+                            },
+                            {
+                                id: 'r3',
+                                name: '健身房月費',
+                                amount: 1288,
+                                currency: 'TWD',
+                                category: '運動',
+                                frequency: 'monthly',
+                                startDate: '2024-01-01',
+                                nextDate: '2024-02-01',
+                                paymentMethod: 'credit',
+                                creditCardId: 'cc1'
+                            },
+                            {
+                                id: 'r4',
+                                name: '手機費',
+                                amount: 599,
+                                currency: 'TWD',
+                                category: '通訊',
+                                frequency: 'monthly',
+                                startDate: '2024-01-01',
+                                nextDate: '2024-02-01',
+                                paymentMethod: 'credit',
+                                creditCardId: 'cc1'
+                            },
+                            {
+                                id: 'r5',
+                                name: '咖啡每日',
+                                amount: 120,
+                                currency: 'TWD',
+                                category: '飲食',
+                                frequency: 'daily',
+                                startDate: '2024-01-01',
+                                nextDate: '2024-01-02',
+                                paymentMethod: 'cash'
+                            }
+                        ]
+                    },
                     features: [
                         "預算顯示：當月剩餘、已花費、總預算即時視覺化",
                         "今日消費：顯示現金消費總額與筆數",
@@ -642,9 +920,190 @@
                 },
                 { 
                     id: 2, 
-                    title: "StockLens Owen", 
+                    title: "StockLens", 
                     url: "https://david8015838-create.github.io/stock-lens/",
                     desc: "投資資產追蹤與複利試算工具",
+                    demoData: {
+                        // 預設資產（涵蓋各種投資類型）
+                        assets: [
+                            // 股票
+                            {
+                                id: 'a1',
+                                name: '台積電',
+                                symbol: '2330',
+                                type: 'stock',
+                                shares: 50,
+                                avgPrice: 550,
+                                currentPrice: 580,
+                                leverage: 1
+                            },
+                            {
+                                id: 'a2',
+                                name: '聯發科',
+                                symbol: '2454',
+                                type: 'stock',
+                                shares: 20,
+                                avgPrice: 800,
+                                currentPrice: 850,
+                                leverage: 1
+                            },
+                            {
+                                id: 'a3',
+                                name: '鴻海',
+                                symbol: '2317',
+                                type: 'stock',
+                                shares: 100,
+                                avgPrice: 105,
+                                currentPrice: 110,
+                                leverage: 1
+                            },
+                            {
+                                id: 'a4',
+                                name: '聯詠',
+                                symbol: '3034',
+                                type: 'stock',
+                                shares: 30,
+                                avgPrice: 450,
+                                currentPrice: 480,
+                                leverage: 1
+                            },
+                            {
+                                id: 'a5',
+                                name: '大立光',
+                                symbol: '3008',
+                                type: 'stock',
+                                shares: 10,
+                                avgPrice: 2200,
+                                currentPrice: 2100,
+                                leverage: 1
+                            },
+                            // ETF
+                            {
+                                id: 'a6',
+                                name: '元大台灣50',
+                                symbol: '0050',
+                                type: 'etf',
+                                shares: 100,
+                                avgPrice: 120,
+                                currentPrice: 125,
+                                leverage: 1
+                            },
+                            {
+                                id: 'a7',
+                                name: '元大高股息',
+                                symbol: '0056',
+                                type: 'etf',
+                                shares: 200,
+                                avgPrice: 28,
+                                currentPrice: 30,
+                                leverage: 1
+                            },
+                            {
+                                id: 'a8',
+                                name: '富邦台50',
+                                symbol: '006208',
+                                type: 'etf',
+                                shares: 80,
+                                avgPrice: 85,
+                                currentPrice: 88,
+                                leverage: 1
+                            },
+                            // 債券
+                            {
+                                id: 'a9',
+                                name: '美國10年期公債',
+                                symbol: 'US10Y',
+                                type: 'bond',
+                                shares: 10,
+                                avgPrice: 100,
+                                currentPrice: 102,
+                                leverage: 1,
+                                couponRate: 4.5,
+                                maturityDate: '2034-01-15'
+                            },
+                            {
+                                id: 'a10',
+                                name: '台灣10年期公債',
+                                symbol: 'TW10Y',
+                                type: 'bond',
+                                shares: 20,
+                                avgPrice: 100,
+                                currentPrice: 101,
+                                leverage: 1,
+                                couponRate: 1.5,
+                                maturityDate: '2034-06-30'
+                            },
+                            // 槓桿投資
+                            {
+                                id: 'a11',
+                                name: '台積電 (槓桿)',
+                                symbol: '2330',
+                                type: 'stock',
+                                shares: 20,
+                                avgPrice: 550,
+                                currentPrice: 580,
+                                leverage: 2
+                            },
+                            {
+                                id: 'a12',
+                                name: '聯發科 (槓桿)',
+                                symbol: '2454',
+                                type: 'stock',
+                                shares: 10,
+                                avgPrice: 800,
+                                currentPrice: 850,
+                                leverage: 3
+                            },
+                            // 美股
+                            {
+                                id: 'a13',
+                                name: 'Apple Inc.',
+                                symbol: 'AAPL',
+                                type: 'stock',
+                                shares: 10,
+                                avgPrice: 180,
+                                currentPrice: 195,
+                                leverage: 1
+                            },
+                            {
+                                id: 'a14',
+                                name: 'Microsoft Corp.',
+                                symbol: 'MSFT',
+                                type: 'stock',
+                                shares: 5,
+                                avgPrice: 350,
+                                currentPrice: 380,
+                                leverage: 1
+                            },
+                            {
+                                id: 'a15',
+                                name: 'NVIDIA Corp.',
+                                symbol: 'NVDA',
+                                type: 'stock',
+                                shares: 8,
+                                avgPrice: 450,
+                                currentPrice: 520,
+                                leverage: 1
+                            },
+                            {
+                                id: 'a16',
+                                name: 'Tesla Inc.',
+                                symbol: 'TSLA',
+                                type: 'stock',
+                                shares: 15,
+                                avgPrice: 250,
+                                currentPrice: 240,
+                                leverage: 1
+                            }
+                        ],
+                        // 預設複利設定
+                        compoundInterest: {
+                            monthlyInvestment: 20000,
+                            annualRate: 6,
+                            startDate: '2024-01-01',
+                            months: 12
+                        }
+                    },
                     features: [
                         "資產管理：支援股票、債券、ETF等多種投資標的，可設定股數、均價、槓桿倍數",
                         "即時追蹤：自動計算總市值、總成本、損益金額與損益百分比",
@@ -658,9 +1117,190 @@
                 },
                 { 
                     id: 3, 
-                    title: "SplitWise Pro - BY OWEN", 
+                    title: "SplitWise Pro", 
                     url: "https://david8015838-create.github.io/splitwise-pro/",
                     desc: "多人分帳與雲端即時同步",
+                    demoData: {
+                        // 預設房間
+                        roomId: 'demo-room-2024',
+                        roomName: 'Demo 分帳群組',
+                        // 預設成員
+                        members: [
+                            { id: 'm1', name: 'Owen', color: '#3B82F6' },
+                            { id: 'm2', name: 'Alice', color: '#10B981' },
+                            { id: 'm3', name: 'Bob', color: '#F59E0B' },
+                            { id: 'm4', name: 'Charlie', color: '#EF4444' },
+                            { id: 'm5', name: 'Diana', color: '#8B5CF6' }
+                        ],
+                        // 預設支出記錄（涵蓋各種分帳情況）
+                        expenses: [
+                            // 平均分攤
+                            {
+                                id: 'e1',
+                                payer: 'm1',
+                                amount: 1200,
+                                description: '晚餐 - 火鍋',
+                                date: '2024-01-15',
+                                splitType: 'equal',
+                                participants: ['m1', 'm2', 'm3'],
+                                category: '飲食'
+                            },
+                            {
+                                id: 'e2',
+                                payer: 'm2',
+                                amount: 800,
+                                description: '電影票',
+                                date: '2024-01-16',
+                                splitType: 'equal',
+                                participants: ['m1', 'm2', 'm3', 'm4'],
+                                category: '娛樂'
+                            },
+                            // 按比例分攤
+                            {
+                                id: 'e3',
+                                payer: 'm3',
+                                amount: 5000,
+                                description: 'Airbnb 住宿費',
+                                date: '2024-01-10',
+                                splitType: 'percentage',
+                                participants: [
+                                    { id: 'm1', percentage: 30 },
+                                    { id: 'm2', percentage: 25 },
+                                    { id: 'm3', percentage: 25 },
+                                    { id: 'm4', percentage: 20 }
+                                ],
+                                category: '住宿'
+                            },
+                            // 自訂金額分攤
+                            {
+                                id: 'e4',
+                                payer: 'm1',
+                                amount: 3000,
+                                description: '超市採買',
+                                date: '2024-01-12',
+                                splitType: 'custom',
+                                participants: [
+                                    { id: 'm1', amount: 1500 },
+                                    { id: 'm2', amount: 800 },
+                                    { id: 'm3', amount: 700 }
+                                ],
+                                category: '購物'
+                            },
+                            {
+                                id: 'e5',
+                                payer: 'm4',
+                                amount: 1500,
+                                description: '計程車費',
+                                date: '2024-01-17',
+                                splitType: 'equal',
+                                participants: ['m1', 'm2', 'm3', 'm4'],
+                                category: '交通'
+                            },
+                            {
+                                id: 'e6',
+                                payer: 'm2',
+                                amount: 2000,
+                                description: 'KTV 包廂',
+                                date: '2024-01-18',
+                                splitType: 'equal',
+                                participants: ['m1', 'm2', 'm3', 'm4', 'm5'],
+                                category: '娛樂'
+                            },
+                            {
+                                id: 'e7',
+                                payer: 'm5',
+                                amount: 600,
+                                description: '飲料',
+                                date: '2024-01-19',
+                                splitType: 'equal',
+                                participants: ['m1', 'm2', 'm3', 'm4', 'm5'],
+                                category: '飲食'
+                            },
+                            {
+                                id: 'e8',
+                                payer: 'm1',
+                                amount: 4500,
+                                description: '高級餐廳',
+                                date: '2024-01-20',
+                                splitType: 'percentage',
+                                participants: [
+                                    { id: 'm1', percentage: 40 },
+                                    { id: 'm2', percentage: 30 },
+                                    { id: 'm3', percentage: 30 }
+                                ],
+                                category: '飲食'
+                            },
+                            {
+                                id: 'e9',
+                                payer: 'm3',
+                                amount: 2500,
+                                description: '門票',
+                                date: '2024-01-14',
+                                splitType: 'equal',
+                                participants: ['m1', 'm2', 'm3'],
+                                category: '娛樂'
+                            },
+                            {
+                                id: 'e10',
+                                payer: 'm4',
+                                amount: 1800,
+                                description: '停車費',
+                                date: '2024-01-21',
+                                splitType: 'custom',
+                                participants: [
+                                    { id: 'm1', amount: 600 },
+                                    { id: 'm2', amount: 600 },
+                                    { id: 'm3', amount: 600 }
+                                ],
+                                category: '交通'
+                            },
+                            // 更多複雜情況
+                            {
+                                id: 'e11',
+                                payer: 'm1',
+                                amount: 8000,
+                                description: '租車費用',
+                                date: '2024-01-08',
+                                splitType: 'custom',
+                                participants: [
+                                    { id: 'm1', amount: 3000 },
+                                    { id: 'm2', amount: 2000 },
+                                    { id: 'm3', amount: 1500 },
+                                    { id: 'm4', amount: 1500 }
+                                ],
+                                category: '交通'
+                            },
+                            {
+                                id: 'e12',
+                                payer: 'm2',
+                                amount: 3500,
+                                description: '紀念品',
+                                date: '2024-01-22',
+                                splitType: 'equal',
+                                participants: ['m1', 'm2', 'm3', 'm4', 'm5'],
+                                category: '購物'
+                            }
+                        ],
+                        // 預設結算記錄
+                        settlements: [
+                            {
+                                id: 's1',
+                                from: 'm2',
+                                to: 'm1',
+                                amount: 450,
+                                date: '2024-01-16',
+                                description: '結算部分帳務'
+                            },
+                            {
+                                id: 's2',
+                                from: 'm3',
+                                to: 'm1',
+                                amount: 300,
+                                date: '2024-01-18',
+                                description: '結算部分帳務'
+                            }
+                        ]
+                    },
                     features: [
                         "雲端同步：輸入房間號碼即可建立共享空間，所有成員即時看到最新帳務狀態",
                         "多人分帳：支援任意人數的群組分帳，可設定不同成員的分攤比例",
@@ -675,25 +1315,25 @@
             ];
 
             const experiences = [
-                { id: "tamkang", title: "淡江大學 國際企業學系", subtitle: "Bachelor of International Business", tag: "Education", summary: "深研國際市場分析與商業策略思維。", details: "在淡江大學期間，專注於國際市場趨勢分析、跨國企業策略規劃以及數據導向的商業邏輯。", image: IMAGES.tamkang, images: [IMAGES.tamkang] },
-                { id: "cia", title: "CIA Language School", subtitle: "獨立公開英文演講", tag: "Public Speaking", summary: "於菲律賓期間完成獨立公開專題演講。", details: "挑戰並完成了一場面向大眾的獨立英文演講，磨練了高壓下的表達力。", image: IMAGES.cia, images: [IMAGES.cia, IMAGES.cia2] },
-                { id: "google", title: "Google Career Certificate", subtitle: "Project Management & Data Analytics", tag: "Professional", summary: "取得 Google 官方 PM 與 Data Analytics 認證。", details: "掌握敏捷開發 (Agile) 與 Scrum 框架，以及數據分析與視覺化技能。", image: IMAGES.google, images: [IMAGES.google, IMAGES.googleDataAnalytics] },
-                { id: "n8n", title: "n8n Automation", subtitle: "Workflow Architect", tag: "Technical Skill", summary: "以最快速度將靈感轉化為解決方案。", details: "擅長透過 API 與自動化工具優化商業流程。", image: IMAGES.n8n, images: [IMAGES.n8n] }
+                { id: "tamkang", title: "Tamkang University", subtitle: "Department of International Business, Bachelor of International Business", tag: "Education", summary: "深研國際市場分析與商業策略思維。", details: "在淡江大學期間，專注於國際市場趨勢分析、跨國企業策略規劃以及數據導向的商業邏輯。", image: IMAGES.tamkang, images: [IMAGES.tamkang] },
+                { id: "cia", title: "Cebu International Academy", subtitle: "ESL, Business English - 獨立公開英文演講", tag: "Public Speaking", summary: "於菲律賓期間完成獨立公開專題演講。", details: "修習 ESL 與 Business English 課程，並挑戰完成了一場面向大眾的獨立英文演講，磨練了高壓下的表達力。", image: IMAGES.cia, images: [IMAGES.cia, IMAGES.cia2] },
+                { id: "google", title: "Google Career Certificate", subtitle: "Project Management & Data Analytics", tag: "Professional", summary: "取得 Google 官方 Project Management 與 Data Analytics 認證。", details: "掌握敏捷開發 (Agile) 與 Scrum 框架，以及數據分析與視覺化技能。", image: IMAGES.google, images: [IMAGES.google, IMAGES.googleDataAnalytics] },
+                { id: "n8n", title: "n8n Automation", subtitle: "Workflow Architect", tag: "Technical Skill", summary: "簡化工作流、提高效率的解決方案。", details: "1.自動搜集：每天早上 7 點，它會跑去你指定的 5 個 AI 網站抓最新消息。\n\n2.挑選重點：它會過濾掉舊聞，只挑出當天最熱門的 10 則新聞。\n\n3.AI 分析：把這些新聞交給 Gemini AI 幫你寫成「產業分析」和「商務英文筆記」。\n\n4.發送到家：最後自動寄出兩封 Gmail 到你信箱，讓你不用點開網頁，喝咖啡時就能讀完今日科技精華。", image: IMAGES.n8n, images: [IMAGES.n8n] }
             ];
 
             const certificateGroups = [
-                { category: "Google 數位實作", items: [
-                    { id: "goo-1", title: "Project Management", issuer: "Google", image: IMAGES.google, desc: "專案規劃與風險管理。" },
-                    { id: "goo-2", title: "Data Analytics", issuer: "Google", image: IMAGES.googleDataAnalytics, desc: "數據分析與視覺化實務。" }
+                { category: "GOOGLE 專業證照", items: [
+                    { id: "goo-1", title: "Project Management", issuer: "Google", image: IMAGES.google, desc: "專案規劃與風險管理。", icon: "google" },
+                    { id: "goo-2", title: "Data Analytics", issuer: "Google", image: IMAGES.googleDataAnalytics, desc: "數據分析與視覺化實務。", icon: "google" }
                 ]},
                 { category: "金融專業資格", items: [
-                    { id: "fin-3", title: "信託業務專業", issuer: "信託業商業同業公會", image: IMAGES.trust, desc: "信託業務實務與法規。" },
-                    { id: "fin-4", title: "銀行內部控制與內部稽核", issuer: "銀行公會", image: IMAGES.bankControl, desc: "銀行內控制度與稽核實務。" },
-                    { id: "fin-5", title: "初階授信人員", issuer: "銀行公會", image: IMAGES.credit, desc: "授信業務基礎實務。" }
+                    { id: "fin-3", title: "信託業務專業", issuer: "信託業商業同業公會", image: IMAGES.trust, desc: "信託業務實務與法規。", icon: "trust" },
+                    { id: "fin-4", title: "銀行內部控制與內部稽核", issuer: "銀行公會", image: IMAGES.bankControl, desc: "銀行內控制度與稽核實務。", icon: "bank" },
+                    { id: "fin-5", title: "初階授信人員", issuer: "銀行公會", image: IMAGES.credit, desc: "授信業務基礎實務。", icon: "bank" }
                 ]},
                 { category: "國際語言能力", items: [
-                    { id: "lang-1", title: "TOEIC 多益英語測驗", issuer: "ETS", image: IMAGES.toeic, desc: "國際商務溝通與閱讀能力認證。" },
-                    { id: "lang-2", title: "Cebu International Academy", issuer: "CIA", image: IMAGES.cebu, desc: "菲律賓語言學校畢業證書，需向左旋轉90度查看。", needsRotation: true }
+                    { id: "lang-1", title: "TOEIC 多益英語測驗", issuer: "ETS", image: IMAGES.toeic, desc: "870(gold)", badge: "gold", icon: "ets" },
+                    { id: "lang-2", title: "Cebu International Academy", issuer: "CIA", image: IMAGES.cebu, desc: "菲律賓語言學校畢業證書。", needsRotation: true, icon: "cia" }
                 ]}
             ];
 
@@ -765,35 +1405,78 @@
                         <motion.div className="fixed top-0 left-0 right-0 h-0.5 bg-white z-[60] origin-left" style={{ scaleX: springProgress }} />
 
                         <nav className="fixed top-0 w-full z-50">
-                            <div className="max-w-7xl mx-auto px-2 sm:px-4 md:px-8 h-14 sm:h-16 md:h-20 flex items-center justify-between border-b border-white/5 backdrop-blur-md">
-                                <div className="flex items-center gap-1 sm:gap-2 md:gap-3 font-medium tracking-tighter text-xs sm:text-sm md:text-lg uppercase flex-shrink-0">
-                                    <div className="w-1 h-1 sm:w-1.5 sm:h-1.5 bg-white rounded-full animate-pulse" />
+                            <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-8 h-16 sm:h-18 md:h-20 flex items-center justify-between border-b border-white/5 backdrop-blur-md">
+                                <div className="flex items-center gap-1.5 sm:gap-2 md:gap-3 font-medium tracking-tighter text-sm sm:text-base md:text-lg uppercase flex-shrink-0">
+                                    <div className="w-1.5 h-1.5 sm:w-1.5 sm:h-1.5 bg-white rounded-full animate-pulse" />
                                     <span className="hidden sm:inline">Studio Portfolio</span>
-                                    <span className="sm:hidden text-[10px]">Portfolio</span>
+                                    <span className="sm:hidden text-xs">Portfolio</span>
                                 </div>
-                                <div className="flex items-center gap-1 sm:gap-2 md:gap-8 text-[7px] sm:text-[8px] md:text-[10px] tracking-[0.15em] sm:tracking-[0.2em] font-medium uppercase text-zinc-500 flex-shrink-0">
+                                <div className="flex items-center gap-2 sm:gap-3 md:gap-8 text-[9px] sm:text-[9px] md:text-[10px] tracking-[0.15em] sm:tracking-[0.2em] font-medium uppercase text-zinc-500 flex-shrink-0">
                                     <a href="#projects" className="md:inline whitespace-nowrap">Projects</a>
                                     <a href="#journey" className="md:inline whitespace-nowrap">Journey</a>
                                     <a href="#certs" className="md:inline whitespace-nowrap">Certs</a>
-                                    <a href="mailto:connect@example.com" className="text-white border border-white/20 px-2 sm:px-3 md:px-6 py-0.5 sm:py-1 md:py-2 rounded-full bg-white/5 text-[7px] sm:text-[8px] md:text-[10px] whitespace-nowrap">Connect</a>
+                                    <a href="mailto:connect@example.com" className="text-white border border-white/20 px-3 sm:px-4 md:px-6 py-1 sm:py-1.5 md:py-2 rounded-full bg-white/5 text-[9px] sm:text-[9px] md:text-[10px] whitespace-nowrap">Connect</a>
                                 </div>
                             </div>
                         </nav>
 
                         <main className="max-w-7xl mx-auto px-4 md:px-8">
-                            <section className="min-h-[70vh] flex flex-col justify-center pb-8 md:pb-12 pt-20 md:pt-0">
-                                <p className="text-zinc-500 font-mono text-xs mb-8 tracking-[0.4em] uppercase">Vibe Coder / Architect</p>
+                            <section className="min-h-[70vh] flex flex-col justify-center pb-8 md:pb-12 pt-20 md:pt-0 relative" style={{ overflow: 'hidden' }}>
+                                {/* 水平渐层背景 - 只在水平方向延伸 */}
+                                <div className="absolute pointer-events-none z-0" style={{
+                                    left: '0',
+                                    right: '0',
+                                    top: '4rem',
+                                    height: '55%',
+                                    background: 'linear-gradient(to right, transparent 0%, rgba(255,255,255,0.005) 30%, rgba(255,255,255,0.008) 50%, rgba(255,255,255,0.01) 70%, rgba(255,255,255,0.012) 85%, transparent 100%)',
+                                    filter: 'blur(40px)'
+                                }}></div>
+                                
+                                {/* 照片 - 融入主題設計 */}
+                                <div className="absolute opacity-70 hover:opacity-85 transition-opacity duration-300 z-0 flex flex-col items-end" style={{
+                                    width: '70%',
+                                    height: '50%',
+                                    top: '4rem',
+                                    right: '-8%',
+                                    pointerEvents: 'none'
+                                }}>
+                                    <div className="relative w-full h-full mb-2" style={{
+                                        maskImage: 'radial-gradient(ellipse 90% 90% at 50% 50%, black 40%, rgba(0,0,0,0.8) 50%, rgba(0,0,0,0.4) 60%, rgba(0,0,0,0.2) 70%, transparent 85%)',
+                                        WebkitMaskImage: 'radial-gradient(ellipse 90% 90% at 50% 50%, black 40%, rgba(0,0,0,0.8) 50%, rgba(0,0,0,0.4) 60%, rgba(0,0,0,0.2) 70%, transparent 85%)',
+                                        maskSize: '100% 100%',
+                                        WebkitMaskSize: '100% 100%',
+                                        maskRepeat: 'no-repeat',
+                                        WebkitMaskRepeat: 'no-repeat'
+                                    }}>
+                                        <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent blur-xl"></div>
+                                        <img 
+                                            src={IMAGES.profilePhoto} 
+                                            alt="Profile" 
+                                            className="relative w-full h-full object-contain shadow-[0_8px_32px_rgba(0,0,0,0.3)] grayscale hover:grayscale-0 transition-all duration-500" 
+                                            style={{
+                                                filter: 'brightness(1.0) contrast(1.2)'
+                                            }}
+                                        />
+                                    </div>
+                                    <div className="text-right pr-2 whitespace-nowrap pointer-events-auto mt-1">
+                                        <p className="text-zinc-400 text-[10px] md:text-xs font-light tracking-wider">
+                                            <span>陳宥緯</span> <span className="text-zinc-600 mx-1">|</span> <span className="text-zinc-500 uppercase">OWEN</span>
+                                        </p>
+                                    </div>
+                                </div>
+                                
+                                <p className="text-zinc-500 font-mono text-[8px] md:text-[9px] mb-8 tracking-[0.4em] uppercase whitespace-nowrap" style={{ width: 'fit-content', maxWidth: '10vw', fontSize: 'clamp(8px, 1vw, 12px)' }}>Vibe Coder / Forward-Thinking</p>
                                 <h1 className="text-[10vw] md:text-[8vw] font-light tracking-tighter leading-[0.8] mb-4 md:mb-6">
-                                    DESIGNING <br />
-                                    <span className="font-serif italic font-normal text-zinc-500 text-[11vw] md:text-[9vw]">Momentum.</span>
+                                    <span className="inline-block">MAKING</span> <br />
+                                    <span className="font-serif italic font-normal text-zinc-500 text-[11vw] md:text-[9vw] inline-block" style={{ marginLeft: '0.28em', marginTop: '-0.08em' }}>Impact.</span>
                                 </h1>
                                 <div className="flex items-center gap-8">
                                     <div className="h-px w-20 bg-zinc-700" />
-                                    <p className="max-w-md text-zinc-500 text-sm leading-relaxed">將商業邏輯轉化為直觀且具備高度自動化的數位體驗。</p>
+                                    <p className="max-w-md text-zinc-500 text-sm leading-relaxed">跨越數據分析與流程自動化，將深層邏輯重塑為推動專案成功的實質影響。</p>
                                 </div>
                             </section>
 
-                            <section id="projects" className="mb-8 relative overflow-visible">
+                            <section id="projects" className="mb-4 mt-4 relative overflow-visible">
                                 <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-white/5 to-transparent"></div>
                                 {/* 裝飾性元素 */}
                                 <div className="absolute top-8 right-8 w-32 h-32 border border-white/5 rounded-full opacity-20"></div>
@@ -839,7 +1522,7 @@
                                         <div className="relative mb-10">
                                             <div className="w-20 h-20 border-2 border-zinc-700/50 rounded-full flex items-center justify-center text-3xl font-extralight text-zinc-400 group-hover:text-white group-hover:border-white/40 transition-all duration-500 group-hover:scale-110 group-hover:rotate-90">
                                                 <span className="relative z-10">+</span>
-                                            </div>
+                                    </div>
                                             {/* 加號周圍的光暈 */}
                                             <div className="absolute inset-0 rounded-full bg-white/5 blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
                                         </div>
@@ -978,8 +1661,8 @@
                                                         animate={isInView ? { opacity: 1 } : { opacity: 0 }}
                                                         transition={{ duration: 0.6, delay: index * 0.15 + 0.3 }}
                                                     >
-                                                        <div className="flex flex-col md:flex-row items-start gap-6">
-                                                            <div className="space-y-4 flex-1">
+                                                <div className="flex flex-col md:flex-row items-start gap-6">
+                                                            <div className="space-y-4 flex-1 cursor-pointer" onClick={() => setActiveExpModal(exp)}>
                                                                 <motion.span 
                                                                     className="text-[10px] font-bold tracking-widest text-zinc-500 uppercase px-2 py-1 border border-zinc-800 rounded inline-block"
                                                                     initial={{ opacity: 0, scale: 0.8 }}
@@ -1010,14 +1693,14 @@
                                                                 >
                                                                     {exp.summary}
                                                                 </motion.p>
-                                                            </div>
-                                                            <div className="flex gap-3 items-start flex-shrink-0">
-                                                                {exp.images && exp.images.map((img, idx) => (
-                                                                    <div key={idx} onClick={() => setActiveExpModal({...exp, selectedImage: img})} className="cursor-pointer">
-                                                                        <img 
-                                                                            src={img} 
-                                                                            alt={exp.title}
-                                                                            className="w-20 h-20 md:w-24 md:h-24 object-cover rounded-lg grayscale hover:grayscale-0 transition-all duration-300 border border-white/10"
+                                                    </div>
+                                                    <div className="flex gap-3 items-start flex-shrink-0">
+                                                        {exp.images && exp.images.map((img, idx) => (
+                                                            <div key={idx} onClick={() => setActiveExpModal({...exp, selectedImage: img})} className="cursor-pointer">
+                                                                <img 
+                                                                    src={img} 
+                                                                    alt={exp.title}
+                                                                    className="w-20 h-20 md:w-24 md:h-24 object-cover rounded-lg grayscale hover:grayscale-0 transition-all duration-300 border border-white/10"
                                                                             style={{
                                                                                 filter: 'brightness(0.6) grayscale(100%)',
                                                                                 transition: 'filter 0.3s ease'
@@ -1028,11 +1711,11 @@
                                                                             onMouseLeave={(e) => {
                                                                                 e.target.style.filter = 'brightness(0.6) grayscale(100%)';
                                                                             }}
-                                                                        />
-                                                                    </div>
-                                                                ))}
+                                                                />
                                                             </div>
-                                                        </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
                                                         
                                                         {/* 底部分割線 */}
                                                         {!isLast && (
@@ -1064,8 +1747,8 @@
                                     backgroundPosition: '0 0, 0 0'
                                 }}></div>
                                 <div className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-8 border-t border-white/5 pt-8 mt-8">
-                                    <h2 className="text-4xl font-light text-white">專業認證體系</h2>
-                                    <p className="text-zinc-500 text-sm max-w-sm">跨足專案管理、自動化開發與金融實務。</p>
+                                    <h2 className="text-4xl font-light text-white">CERTIFICATE</h2>
+                                    <p className="text-zinc-500 text-sm max-w-sm">跨足專案管理、數據分析與金融實務。</p>
                                 </div>
                                 <div className="space-y-12">
                                     {certificateGroups.map((group, groupIdx) => {
@@ -1080,8 +1763,8 @@
                                                 transition={{ duration: 0.6, delay: groupIdx * 0.15 }}
                                                 className="grid grid-cols-1 lg:grid-cols-12 gap-12"
                                             >
-                                                <div className="lg:col-span-3 text-xs font-bold tracking-[0.3em] uppercase text-zinc-600">{group.category}</div>
-                                                <div className="lg:col-span-9 grid grid-cols-1 md:grid-cols-2 gap-6">
+                                            <div className="lg:col-span-3 text-xs font-bold tracking-[0.3em] uppercase text-zinc-600">{group.category}</div>
+                                            <div className="lg:col-span-9 grid grid-cols-1 md:grid-cols-2 gap-6">
                                                     {group.items.map((cert, certIdx) => (
                                                         <motion.div
                                                             key={cert.id}
@@ -1103,11 +1786,46 @@
                                                             }}></div>
                                                             
                                                             <div className="relative z-10">
-                                                                <h5 className="text-xl font-light mb-2">{cert.title}</h5>
-                                                                <p className="text-zinc-600 text-[10px] tracking-widest uppercase font-bold">{cert.issuer}</p>
+                                                                <div className="flex items-center gap-3 mb-3">
+                                                                    {cert.icon && (
+                                                                        <div className="w-8 h-8 flex items-center justify-center flex-shrink-0 grayscale opacity-60">
+                                                                            {cert.icon === "google" && (
+                                                                                <svg className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                                                                                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                                                                                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                                                                                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                                                                                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                                                                                </svg>
+                                                                            )}
+                                                                            {cert.icon === "trust" && (
+                                                                                <img src={IMAGES.iconTrust} alt="信託" className="w-6 h-6 object-contain" style={{ mixBlendMode: 'multiply', filter: 'contrast(1.3) brightness(0.85) grayscale(100%)' }} />
+                                                                            )}
+                                                                            {cert.icon === "bank" && (
+                                                                                <img src={IMAGES.iconBank} alt="銀行" className="w-6 h-6 object-contain" style={{ mixBlendMode: 'multiply', filter: 'contrast(1.3) brightness(0.85) grayscale(100%)' }} />
+                                                                            )}
+                                                                            {cert.icon === "ets" && (
+                                                                                <img src={IMAGES.iconToeic} alt="TOEIC" className="w-6 h-6 object-contain" style={{ mixBlendMode: 'multiply', filter: 'contrast(1.3) brightness(0.85) grayscale(100%)' }} />
+                                                                            )}
+                                                                            {cert.icon === "cia" && (
+                                                                                <img src={IMAGES.iconCia} alt="CIA" className="w-10 h-10 object-contain" style={{ mixBlendMode: 'multiply', filter: 'contrast(1.3) brightness(0.85) grayscale(100%)' }} />
+                                                                            )}
+                                                                        </div>
+                                                                    )}
+                                                                    <div className="flex-1">
+                                                                        <div className="flex items-center justify-between">
+                                                                            <h5 className="text-xl font-light">{cert.title}</h5>
+                                                                            {cert.badge && (
+                                                                                <div className="w-12 h-12 rounded-full border border-yellow-500/50 bg-yellow-500/10 flex items-center justify-center">
+                                                                                    <span className="text-[10px] font-bold text-yellow-400 uppercase tracking-wider">{cert.badge}</span>
+                                            </div>
+                                                                            )}
+                                        </div>
+                                                                        <p className="text-zinc-600 text-[10px] tracking-widest uppercase font-bold mt-1">{cert.issuer}</p>
+                                                                    </div>
+                                                                </div>
                                                             </div>
                                                         </motion.div>
-                                                    ))}
+                                    ))}
                                                 </div>
                                             </motion.div>
                                         );
@@ -1117,13 +1835,165 @@
 
                             <footer className="py-32 border-t border-white/5 text-center">
                                 <div className="text-[12vw] font-serif italic text-white/5 pointer-events-none select-none">Stay Forward.</div>
-                                <div className="text-[10px] tracking-[0.5em] text-zinc-600 uppercase font-bold mt-12">© 2024 / Digital Identity</div>
+                                <div className="flex items-center justify-center gap-6 mt-12">
+                                    {/* LinkedIn */}
+                                    <a 
+                                        href="https://linkedin.com/in/youwei-chen-76b95235a" 
+                                        target="_blank" 
+                                        rel="noopener noreferrer"
+                                        className="w-10 h-10 flex items-center justify-center rounded-full border border-white/10 hover:border-white/30 hover:bg-white/5 transition-all duration-300 group"
+                                        aria-label="LinkedIn"
+                                    >
+                                        <svg className="w-5 h-5 text-zinc-400 group-hover:text-white transition-colors" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                            <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+                                        </svg>
+                                    </a>
+                                    
+                                    {/* Email */}
+                                    <a 
+                                        href="mailto:david8015838@gmail.com" 
+                                        className="w-10 h-10 flex items-center justify-center rounded-full border border-white/10 hover:border-white/30 hover:bg-white/5 transition-all duration-300 group"
+                                        aria-label="Email"
+                                    >
+                                        <svg className="w-5 h-5 text-zinc-400 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                        </svg>
+                                    </a>
+                                    
+                                    {/* Threads */}
+                                    <a 
+                                        href="https://www.threads.com/@___cuw___?igshid=NTc4MTIwNjQ2YQ==" 
+                                        target="_blank" 
+                                        rel="noopener noreferrer"
+                                        className="w-10 h-10 flex items-center justify-center rounded-full border border-white/10 hover:border-white/30 hover:bg-white/5 transition-all duration-300 group"
+                                        aria-label="Threads"
+                                    >
+                                        <img src={IMAGES.iconThreads} alt="Threads" className="w-5 h-5 opacity-60 group-hover:opacity-100 transition-opacity" />
+                                    </a>
+                                </div>
                             </footer>
                         </main>
                     </div>
 
                     {/* Modals */}
                     <AnimatePresence>
+                        {/* Project Info Modal - 功能介紹 */}
+                        {activeProjectInfo && (
+                            <motion.div 
+                                key="proj-info-modal" 
+                                initial={{ opacity: 0 }} 
+                                animate={{ opacity: 1 }} 
+                                exit={{ opacity: 0 }} 
+                                className="fixed inset-0 z-[210] flex items-center justify-center p-4 md:p-6"
+                                onAnimationStart={() => document.body.classList.add('modal-open')}
+                                onExitComplete={() => {
+                                    setTimeout(() => {
+                                        document.body.classList.remove('modal-open');
+                                        document.body.style.overflow = '';
+                                        document.body.style.position = '';
+                                        document.body.style.width = '';
+                                        document.body.style.height = '';
+                                        setActiveProjectInfo(null);
+                                    }, 100);
+                                }}
+                            >
+                                <div className="absolute inset-0 bg-black/80 backdrop-blur-3xl" onClick={() => {
+                                    setActiveProjectInfo(null);
+                                    setTimeout(() => {
+                                        document.body.classList.remove('modal-open');
+                                        document.body.style.overflow = '';
+                                        document.body.style.position = '';
+                                        document.body.style.width = '';
+                                        document.body.style.height = '';
+                                    }, 100);
+                                }} />
+                                <motion.div 
+                                    initial={{ scale: 0.9, opacity: 0, y: 20 }} 
+                                    animate={{ scale: 1, opacity: 1, y: 0 }} 
+                                    exit={{ scale: 0.9, opacity: 0, y: 20 }} 
+                                    transition={{ duration: 0.5, ease: [0.25, 0.1, 0.25, 1] }}
+                                    className="relative max-w-[95vw] lg:max-w-4xl w-full max-h-[90vh] bg-gradient-to-br from-zinc-900 via-zinc-900 to-zinc-950 border border-white/10 rounded-[2.5rem] p-6 md:p-12 lg:p-16 overflow-y-auto custom-scrollbar backdrop-blur-xl shadow-2xl"
+                                    style={{
+                                        position: 'relative',
+                                        isolation: 'isolate'
+                                    }}
+                                    onClick={(e) => e.stopPropagation()}
+                                >
+                                    {/* 背景光暈效果 */}
+                                    <div className="absolute inset-0 bg-gradient-to-r from-blue-500/0 via-purple-500/5 to-cyan-500/0 opacity-50 rounded-[2.5rem]"></div>
+                                    
+                                    {/* 裝飾性網格背景 */}
+                                    <div className="absolute inset-0 opacity-[0.03] rounded-[2.5rem]" style={{
+                                        backgroundImage: 'linear-gradient(rgba(255,255,255,0.15) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.15) 1px, transparent 1px)',
+                                        backgroundSize: '30px 30px',
+                                        backgroundPosition: '0 0, 0 0'
+                                    }}></div>
+                                    
+                                    {/* 邊框光效 */}
+                                    <div className="absolute -inset-[1px] rounded-[2.5rem] bg-gradient-to-r from-blue-500/0 via-purple-500/10 to-cyan-500/0 opacity-50 blur-xl -z-10"></div>
+                                    
+                                    <div className="relative z-10">
+                                        <div className="flex justify-between items-start mb-8 md:mb-12">
+                                            <h2 className="text-2xl md:text-4xl font-light text-white">{activeProjectInfo.title}</h2>
+                                            <button onClick={() => {
+                                                setActiveProjectInfo(null);
+                                                setTimeout(() => {
+                                                    document.body.classList.remove('modal-open');
+                                                    document.body.style.overflow = '';
+                                                    document.body.style.position = '';
+                                                    document.body.style.width = '';
+                                                    document.body.style.height = '';
+                                                }, 100);
+                                            }} className="text-3xl font-thin hover:text-white transition hover:rotate-90 duration-300">×</button>
+                                        </div>
+                                        
+                                        <p className="text-zinc-400 text-base md:text-lg mb-8 md:mb-12 leading-relaxed">{activeProjectInfo.desc}</p>
+                                        
+                                        <div className="mb-8 md:mb-12">
+                                            <h3 className="text-lg md:text-xl font-light text-white mb-6">功能特色</h3>
+                                            <ul className="space-y-3 md:space-y-4">
+                                                {activeProjectInfo.features.map((feature, idx) => (
+                                                    <motion.li 
+                                                        key={idx}
+                                                        initial={{ opacity: 0, x: -20 }}
+                                                        animate={{ opacity: 1, x: 0 }}
+                                                        transition={{ duration: 0.4, delay: idx * 0.05 }}
+                                                        className="text-zinc-400 text-sm md:text-base flex items-start gap-3"
+                                                    >
+                                                        <span className="text-white/30 mt-1">•</span>
+                                                        <span>{feature}</span>
+                                                    </motion.li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                        
+                                        <div className="flex justify-center pt-4">
+                                            <motion.button
+                                                onClick={() => {
+                                                    // 先关闭功能介绍modal
+                                                    setActiveProjectInfo(null);
+                                                    // 然后直接打开小程序视图
+                                                    setTimeout(() => {
+                                                        setActiveProjectView(activeProjectInfo);
+                                                        document.body.classList.remove('modal-open');
+                                                        document.body.style.overflow = '';
+                                                        document.body.style.position = '';
+                                                        document.body.style.width = '';
+                                                        document.body.style.height = '';
+                                                    }, 300);
+                                                }}
+                                                className="px-8 md:px-12 py-3 md:py-4 bg-gradient-to-r from-white/10 to-white/5 border border-white/20 rounded-full text-white font-medium text-sm md:text-base uppercase tracking-wider hover:from-white/20 hover:to-white/10 transition-all duration-500 hover:scale-105 hover:shadow-[0_8px_32px_0_rgba(255,255,255,0.1)]"
+                                                whileHover={{ scale: 1.05 }}
+                                                whileTap={{ scale: 0.95 }}
+                                            >
+                                                Try it now!
+                                            </motion.button>
+                                        </div>
+                                    </div>
+                                </motion.div>
+                            </motion.div>
+                        )}
+
                         {activeProjectModal && (
                             <motion.div 
                                 key="proj-modal" 
@@ -1134,19 +2004,19 @@
                                 onAnimationStart={() => document.body.classList.add('modal-open')}
                                 onExitComplete={() => {
                                     setTimeout(() => {
-                                        document.body.classList.remove('modal-open');
+                                    document.body.classList.remove('modal-open');
                                         document.body.style.overflow = '';
                                         document.body.style.position = '';
                                         document.body.style.width = '';
                                         document.body.style.height = '';
-                                        setActiveProjectModal(false);
+                                    setActiveProjectModal(false);
                                     }, 100);
                                 }}
                             >
                                 <div className="absolute inset-0 bg-black/80 backdrop-blur-3xl" onClick={() => {
                                     setActiveProjectModal(false);
                                     setTimeout(() => {
-                                        document.body.classList.remove('modal-open');
+                                    document.body.classList.remove('modal-open');
                                         document.body.style.overflow = '';
                                         document.body.style.position = '';
                                         document.body.style.width = '';
@@ -1154,36 +2024,78 @@
                                     }, 100);
                                 }} />
                                 <motion.div 
-                                    initial={{ scale: 0.9, opacity: 0 }} 
-                                    animate={{ scale: 1, opacity: 1 }} 
-                                    exit={{ scale: 0.9, opacity: 0 }} 
-                                    className="relative max-w-[95vw] lg:max-w-6xl w-full max-h-[90vh] bg-zinc-900 border border-white/10 rounded-[2.5rem] p-6 md:p-12 lg:p-20 overflow-y-auto custom-scrollbar"
+                                    initial={{ scale: 0.9, opacity: 0, y: 20 }} 
+                                    animate={{ scale: 1, opacity: 1, y: 0 }} 
+                                    exit={{ scale: 0.9, opacity: 0, y: 20 }} 
+                                    transition={{ duration: 0.5, ease: [0.25, 0.1, 0.25, 1] }}
+                                    className="relative max-w-[95vw] lg:max-w-6xl w-full max-h-[90vh] bg-gradient-to-br from-zinc-900 via-zinc-900 to-zinc-950 border border-white/10 rounded-[2.5rem] p-6 md:p-12 lg:p-20 overflow-y-auto custom-scrollbar backdrop-blur-xl shadow-2xl"
+                                    style={{
+                                        position: 'relative',
+                                        isolation: 'isolate'
+                                    }}
                                     onClick={(e) => e.stopPropagation()}
                                 >
+                                    {/* 背景光暈效果 */}
+                                    <div className="absolute inset-0 bg-gradient-to-r from-blue-500/0 via-purple-500/5 to-cyan-500/0 opacity-0 group-hover:opacity-100 transition-opacity duration-700 rounded-[2.5rem]"></div>
+                                    
+                                    {/* 裝飾性網格背景 */}
+                                    <div className="absolute inset-0 opacity-[0.03] rounded-[2.5rem]" style={{
+                                        backgroundImage: 'linear-gradient(rgba(255,255,255,0.15) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.15) 1px, transparent 1px)',
+                                        backgroundSize: '30px 30px',
+                                        backgroundPosition: '0 0, 0 0'
+                                    }}></div>
+                                    
+                                    {/* 邊框光效 */}
+                                    <div className="absolute -inset-[1px] rounded-[2.5rem] bg-gradient-to-r from-blue-500/0 via-purple-500/10 to-cyan-500/0 opacity-50 blur-xl -z-10"></div>
+                                    
+                                    <div className="relative z-10">
                                     <div className="flex justify-between items-start mb-12 md:mb-20">
                                         <h2 className="text-3xl md:text-5xl font-light text-white">Project Matrix</h2>
                                         <button onClick={() => {
                                             setActiveProjectModal(false);
-                                            setTimeout(() => {
-                                                document.body.classList.remove('modal-open');
-                                                document.body.style.overflow = '';
-                                                document.body.style.position = '';
-                                                document.body.style.width = '';
-                                                document.body.style.height = '';
-                                            }, 100);
-                                        }} className="text-3xl font-thin hover:text-white transition">×</button>
+                                                setTimeout(() => {
+                                            document.body.classList.remove('modal-open');
+                                                    document.body.style.overflow = '';
+                                                    document.body.style.position = '';
+                                                    document.body.style.width = '';
+                                                    document.body.style.height = '';
+                                                }, 100);
+                                            }} className="text-3xl font-thin hover:text-white transition hover:rotate-90 duration-300">×</button>
                                     </div>
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
-                                        {projects.map((p) => (
-                                            <div key={p.id} className="p-8 md:p-10 border border-white/5 rounded-3xl hover:bg-white/[0.02] cursor-pointer transition-all" onClick={() => {
-                                                setActiveProjectView(p);
+                                        {projects.map((p, idx) => (
+                                            <motion.div 
+                                                key={p.id} 
+                                                initial={{ opacity: 0, y: 20 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                transition={{ duration: 0.5, delay: idx * 0.1 }}
+                                                className="group p-8 md:p-10 border border-white/5 rounded-3xl hover:bg-white/[0.02] cursor-pointer transition-all relative overflow-hidden backdrop-blur-sm"
+                                                style={{
+                                                    position: 'relative',
+                                                    isolation: 'isolate'
+                                                }}
+                                                onClick={() => {
+                                                    setActiveProjectInfo(p);
                                                 setActiveProjectModal(false);
-                                                // 保持modal-open状态，因为会打开新的modal
-                                            }}>
-                                                <h4 className="text-xl md:text-2xl font-light mb-2 text-white">{p.title}</h4>
-                                                <p className="text-zinc-500 text-sm">{p.desc}</p>
+                                                }}
+                                            >
+                                                {/* 卡片格子背景 */}
+                                                <div className="absolute inset-0 opacity-[0.02] group-hover:opacity-[0.05] transition-opacity duration-700 pointer-events-none" style={{
+                                                    backgroundImage: 'linear-gradient(rgba(255,255,255,0.15) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.15) 1px, transparent 1px)',
+                                                    backgroundSize: '20px 20px',
+                                                    backgroundPosition: '0 0, 0 0'
+                                                }}></div>
+                                                
+                                                {/* 卡片光效 */}
+                                                <div className="absolute inset-0 bg-gradient-to-br from-white/0 via-white/0 to-white/5 opacity-0 group-hover:opacity-100 transition-opacity duration-700 rounded-3xl"></div>
+                                                
+                                                <div className="relative z-10">
+                                                    <h4 className="text-xl md:text-2xl font-light mb-2 text-white group-hover:translate-x-1 transition-transform">{p.title}</h4>
+                                                    <p className="text-zinc-500 text-sm group-hover:text-zinc-400 transition-colors">{p.desc}</p>
                                             </div>
+                                            </motion.div>
                                         ))}
+                                        </div>
                                     </div>
                                 </motion.div>
                             </motion.div>
@@ -1193,7 +2105,21 @@
                             <motion.div key="info-modal" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[200] flex items-center justify-center p-4 md:p-6">
                                 <div className="absolute inset-0 bg-black/80 backdrop-blur-3xl" onClick={() => { setActiveExpModal(null); setActiveCertModal(null); }} />
                                 <motion.div initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 50, opacity: 0 }} className="relative bg-zinc-900 border border-white/10 max-w-5xl w-full max-h-[90vh] md:max-h-[85vh] overflow-hidden rounded-[2.5rem] flex flex-col lg:flex-row">
-                                    <div className="lg:w-1/2 bg-zinc-800 h-64 lg:h-auto relative overflow-hidden flex items-center justify-center">
+                                    <div className="lg:w-1/2 bg-zinc-800 h-64 lg:h-auto relative overflow-hidden flex items-center justify-center p-4">
+                                        {activeExpModal?.images && activeExpModal.images.length > 1 ? (
+                                            <div className="w-full h-full flex flex-col gap-4 overflow-y-auto">
+                                                {activeExpModal.images.map((img, idx) => (
+                                                    <img 
+                                                        key={idx}
+                                                        src={img} 
+                                                        className="w-full object-contain grayscale-0 opacity-100"
+                                                        style={{ 
+                                                            maxHeight: activeExpModal.images.length > 1 ? 'calc(50% - 8px)' : '100%'
+                                                        }}
+                                                    />
+                                                ))}
+                                            </div>
+                                        ) : (
                                         <img 
                                             src={(activeExpModal?.selectedImage || activeExpModal?.image || activeCertModal?.image)} 
                                             className="w-full h-full object-contain grayscale-0 opacity-100"
@@ -1202,12 +2128,16 @@
                                                 transition: 'transform 0.3s'
                                             }}
                                         />
+                                        )}
                                     </div>
                                     <div className="lg:w-1/2 p-8 md:p-12 lg:p-16 overflow-y-auto custom-scrollbar">
                                         <button onClick={() => { setActiveExpModal(null); setActiveCertModal(null); }} className="float-right text-2xl font-thin hover:text-white transition">×</button>
                                         <span className="text-[10px] font-bold tracking-[0.3em] uppercase text-zinc-500">{(activeExpModal || activeCertModal).tag || (activeExpModal || activeCertModal).category}</span>
-                                        <h2 className="text-4xl font-light text-white my-8">{(activeExpModal || activeCertModal).title}</h2>
-                                        <p className="text-zinc-400 leading-relaxed">{(activeExpModal || activeCertModal).details || (activeExpModal || activeCertModal).desc}</p>
+                                        <h2 className="text-4xl font-light text-white my-4">{(activeExpModal || activeCertModal).title}</h2>
+                                        {(activeExpModal || activeCertModal).subtitle && (
+                                            <p className="text-xl font-light text-zinc-300 mb-6">{(activeExpModal || activeCertModal).subtitle}</p>
+                                        )}
+                                        <p className="text-zinc-400 leading-relaxed whitespace-pre-line">{(activeExpModal || activeCertModal).details || (activeExpModal || activeCertModal).desc}</p>
                                     </div>
                                 </motion.div>
                             </motion.div>
@@ -1220,17 +2150,18 @@
                                 initial={{ opacity: 0 }} 
                                 animate={{ opacity: 1 }} 
                                 exit={{ opacity: 0 }} 
-                                className="fixed inset-0 z-[220] flex items-center justify-center p-2 md:p-4 lg:p-6"
+                                className="fixed inset-0 z-[220] flex items-center justify-center"
                                 onAnimationStart={() => document.body.classList.add('modal-open')}
                                 onExitComplete={() => {
                                     document.body.classList.remove('modal-open');
                                 }}
                             >
                                 <div className="absolute inset-0 bg-black/80 backdrop-blur-3xl" onClick={() => {
+                                    // 返回 Project Matrix 页面
                                     setActiveProjectView(null);
-                                    setActiveProjectModal(false);
+                                    setActiveProjectModal(true);
                                     setTimeout(() => {
-                                        document.body.classList.remove('modal-open');
+                                    document.body.classList.remove('modal-open');
                                         document.body.style.overflow = '';
                                         document.body.style.position = '';
                                         document.body.style.width = '';
@@ -1241,50 +2172,66 @@
                                     initial={{ y: 40, opacity: 0 }} 
                                     animate={{ y: 0, opacity: 1 }} 
                                     exit={{ y: 40, opacity: 0 }} 
-                                    className="relative bg-zinc-900 border border-white/10 max-w-[95vw] lg:max-w-6xl w-full max-h-[95vh] rounded-[2rem] overflow-hidden flex flex-col"
+                                    className="relative w-[95vw] h-[95vh] max-w-[98vw] max-h-[98vh] overflow-hidden flex flex-col rounded-[3rem] backdrop-blur-2xl"
+                                    style={{
+                                        background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%)',
+                                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                                        boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.37), inset 0 0 0 1px rgba(255, 255, 255, 0.1)'
+                                    }}
                                     onClick={(e) => e.stopPropagation()}
                                 >
-                                    <div className="flex justify-between items-center px-4 md:px-6 lg:px-8 py-4 md:py-6 border-b border-white/10 flex-shrink-0">
-                                        <button onClick={() => { 
+                                    {/* 玻璃效果光晕 */}
+                                    <div className="absolute inset-0 bg-gradient-to-br from-white/5 via-transparent to-transparent rounded-[3rem] pointer-events-none"></div>
+                                    
+                                    {/* 边框高光效果 */}
+                                    <div className="absolute -inset-[1px] bg-gradient-to-r from-white/20 via-white/10 to-white/20 rounded-[3rem] opacity-50 blur-sm pointer-events-none -z-10"></div>
+                                    
+                                    {/* 右上角返回按钮 */}
+                                    <div className="absolute top-6 right-6 z-50 flex-shrink-0">
+                                        <button 
+                                            onClick={() => { 
+                                                // 返回 Project Matrix 页面
                                             setActiveProjectView(null);
                                             setActiveProjectModal(true);
-                                            setTimeout(() => {
-                                                document.body.classList.remove('modal-open');
-                                                document.body.style.overflow = '';
-                                                document.body.style.position = '';
-                                                document.body.style.width = '';
-                                                document.body.style.height = '';
-                                            }, 100);
-                                        }} className="text-sm text-zinc-400 hover:text-white transition mr-4">← 返回</button>
-                                        <h3 className="text-xl md:text-2xl font-light text-white flex-1 text-center">{activeProjectView.title}</h3>
-                                        <button onClick={() => { 
-                                            setActiveProjectView(null);
-                                            setActiveProjectModal(false);
-                                            setTimeout(() => {
-                                                document.body.classList.remove('modal-open');
-                                                document.body.style.overflow = '';
-                                                document.body.style.position = '';
-                                                document.body.style.width = '';
-                                                document.body.style.height = '';
-                                            }, 100);
-                                        }} className="text-2xl font-thin hover:text-white transition ml-4">×</button>
+                                                setTimeout(() => {
+                                            document.body.classList.remove('modal-open');
+                                                    document.body.style.overflow = '';
+                                                    document.body.style.position = '';
+                                                    document.body.style.width = '';
+                                                    document.body.style.height = '';
+                                                }, 100);
+                                            }} 
+                                            className="px-5 py-2.5 bg-white/10 hover:bg-white/20 border border-white/30 rounded-xl text-white text-sm font-medium transition-all duration-300 hover:scale-105 backdrop-blur-md shadow-lg"
+                                            style={{
+                                                boxShadow: '0 4px 16px rgba(0, 0, 0, 0.2), inset 0 0 0 1px rgba(255, 255, 255, 0.1)'
+                                            }}
+                                        >
+                                            ← 返回
+                                        </button>
                                     </div>
-                                    <div className="grid grid-cols-1 lg:grid-cols-2 flex-1 overflow-hidden min-h-0">
-                                        <div className="bg-zinc-800 overflow-hidden min-h-[40vh] lg:min-h-0 relative" style={{ maxHeight: 'calc(95vh - 80px)' }}>
-                                            <div className="absolute inset-0 flex items-center justify-center" style={{ 
+                                    
+                                    {/* 小程序内容区域 - 占据全屏 */}
+                                    <div className="flex-1 overflow-hidden min-h-0 w-full h-full rounded-[3rem]">
+                                        <div className="bg-transparent overflow-hidden relative w-full h-full rounded-[3rem]">
+                                            <div className="absolute inset-0 flex items-center justify-center rounded-[3rem]" style={{ 
                                                 width: '100%',
                                                 height: '100%'
                                             }}>
-                                                <div style={{
-                                                    width: `${100 / iframeScale}%`,
-                                                    height: `${100 / iframeScale}%`,
-                                                    transform: `scale(${iframeScale})`,
-                                                    transformOrigin: 'center center',
-                                                    position: 'relative'
-                                                }}>
+                                                <div 
+                                                    className="rounded-[2.5rem] overflow-hidden shadow-2xl"
+                                                    style={{
+                                                        width: `${100 / iframeScale}%`,
+                                                        height: `${100 / iframeScale}%`,
+                                                        transform: `scale(${iframeScale})`,
+                                                        transformOrigin: 'center center',
+                                                        position: 'relative',
+                                                        boxShadow: '0 20px 60px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.1)'
+                                                    }}
+                                                >
                                                     <iframe 
-                                                        src={activeProjectView.url} 
-                                                        className="border-0 bg-white w-full h-full" 
+                                                        ref={iframeRef}
+                                                        src={activeProjectView.url + (activeProjectView.demoData ? '?demo=true&source=portfolio' : '')} 
+                                                        className="border-0 bg-white w-full h-full rounded-[2.5rem]" 
                                                         style={{ 
                                                             width: '100%',
                                                             height: '100%',
@@ -1295,16 +2242,8 @@
                                                         allow="fullscreen"
                                                         sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-top-navigation allow-pointer-lock"
                                                     />
-                                                </div>
-                                            </div>
                                         </div>
-                                        <div className="p-4 md:p-6 lg:p-8 lg:p-10 overflow-y-auto custom-scrollbar" onWheel={(e) => e.stopPropagation()} style={{ maxHeight: 'calc(95vh - 80px)' }}>
-                                            <h4 className="text-lg md:text-xl font-light text-white mb-4">功能特色</h4>
-                                            <ul className="space-y-2 text-zinc-400 text-sm">
-                                                {activeProjectView.features.map((f, idx) => (
-                                                    <li key={idx}>• {f}</li>
-                                                ))}
-                                            </ul>
+                                            </div>
                                         </div>
                                     </div>
                                 </motion.div>

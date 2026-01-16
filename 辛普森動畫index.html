@@ -168,13 +168,13 @@
                 // --- 馬克杯與煙霧 ---
                 const mugGroup = new THREE.Group();
                 const mugMat = new THREE.MeshStandardMaterial({ color: 0x8B4513 }); // 咖啡色
-                // 增大馬克杯尺寸：從0.15/0.18/0.3增加到0.25/0.28/0.45
-                const mugBody = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.28, 0.45, 16), mugMat);
-                mugBody.position.y = 1.35;
+                // 增大馬克杯尺寸：從0.15/0.18/0.3增加到0.25/0.28/0.6（增加高度）
+                const mugBody = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.28, 0.6, 16), mugMat);
+                mugBody.position.y = 1.5;
                 // 增大把手尺寸：從0.08/0.03增加到0.12/0.04
                 const mugHandle = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.04, 8, 16), mugMat);
                 mugHandle.rotation.z = Math.PI / 2;
-                mugHandle.position.set(0.3, 1.35, 0);
+                mugHandle.position.set(0.3, 1.5, 0);
                 mugGroup.add(mugBody, mugHandle);
                 mugGroup.position.set(-0.5, 0, 2);
                 scene.add(mugGroup);
@@ -231,7 +231,7 @@
                             smoke.material.opacity -= 0.003;
                             
                             if (smoke.position.y > 2.5 || smoke.material.opacity < 0) {
-                                smoke.position.set(-0.5 + (Math.random() - 0.5) * 0.1, 1.7, 2);
+                                smoke.position.set(-0.5 + (Math.random() - 0.5) * 0.1, 1.95, 2);
                                 smoke.scale.set(0.5, 0.5, 0.5);
                                 smoke.material.opacity = 0.6;
                             }
@@ -331,12 +331,15 @@
                                             transform: 'rotate(-2deg)',
                                             letterSpacing: '0.1em'
                                         }}>PORTFOLIO ENTRANCE</div>
-                                        <div className="absolute bottom-0 right-0 text-[11px] md:text-[14px] font-black italic text-[#5E3023] uppercase whitespace-nowrap" style={{
-                                            transform: 'rotate(-2deg) translateY(calc(100% + 8px))',
+                                        <div className="absolute bottom-0 right-0 text-[11px] md:text-[14px] font-black italic uppercase whitespace-nowrap" style={{
+                                            transform: 'translateY(calc(100% + 8px))',
                                             letterSpacing: '0.2em',
-                                            WebkitTextStroke: '1.0px #5E3023',
-                                            textShadow: '1px 1px 0px rgba(0,0,0,0.3)',
-                                            fontWeight: 900
+                                            color: '#5E3023',
+                                            textShadow: '1px 1px 2px rgba(94, 48, 35, 0.8), 2px 2px 4px rgba(0,0,0,0.4)',
+                                            fontWeight: 900,
+                                            WebkitFontSmoothing: 'antialiased',
+                                            MozOsxFontSmoothing: 'grayscale',
+                                            textRendering: 'optimizeLegibility'
                                         }}>
                                             owen design
                                         </div>
