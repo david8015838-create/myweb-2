@@ -125,7 +125,7 @@
 
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
-        const { motion, AnimatePresence, useScroll, useSpring } = window.Motion;
+        const { motion, AnimatePresence, useScroll, useSpring, useInView } = window.Motion;
 
         const App = () => {
             const [stage, setStage] = useState('intro3d');
@@ -134,6 +134,27 @@
             const [activeProjectView, setActiveProjectView] = useState(null);
             const [activeExpModal, setActiveExpModal] = useState(null);
             const [activeCertModal, setActiveCertModal] = useState(null);
+            const [iframeScale, setIframeScale] = useState(0.6);
+            
+            // 根據屏幕大小動態調整iframe縮放
+            useEffect(() => {
+                const updateScale = () => {
+                    const isMobile = window.innerWidth < 1024; // lg breakpoint
+                    
+                    if (isMobile) {
+                        // 手機：使用較小的縮放，讓內容完整顯示
+                        setIframeScale(0.6);
+                    } else {
+                        // 電腦：使用與手機相同的縮放比例，確保內容完整顯示
+                        // 這樣可以確保在電腦上也能看到完整的小程序內容
+                        setIframeScale(0.6);
+                    }
+                };
+                
+                updateScale();
+                window.addEventListener('resize', updateScale);
+                return () => window.removeEventListener('resize', updateScale);
+            }, [activeProjectView]);
 
             const threeInstance = useRef({ scene: null, camera: null, renderer: null, tv: null, noiseCanvas: null, noiseTex: null, noiseCtx: null, staticActive: false });
             const staticCanvasRef = useRef(null);
@@ -524,7 +545,10 @@
                 n8n: "n8n.JPG",
                 finance: "https://images.unsplash.com/photo-1554224155-6726b3ff858f?q=80&w=2511&auto=format&fit=crop",
                 toeic: "多益JPG.JPG",
-                cebu: "Cebu internantional academy畢業證書.jpg"
+                cebu: "Cebu internantional academy畢業證書.jpg",
+                trust: "信託業務專業.JPG",
+                bankControl: "銀行內部控制與內部稽核.JPG",
+                credit: "初階授信人員.JPG"
             };
 
             const projects = [
@@ -593,8 +617,9 @@
                     { id: "goo-2", title: "Data Analytics", issuer: "Google", image: IMAGES.googleDataAnalytics, desc: "數據分析與視覺化實務。" }
                 ]},
                 { category: "金融專業資格", items: [
-                    { id: "fin-1", title: "證券商高級業務員", issuer: "證基會", image: IMAGES.finance, desc: "證券市場實務與法規。" },
-                    { id: "fin-2", title: "投信投顧業務員", issuer: "證基會", image: IMAGES.finance, desc: "資產配置與產品分析。" }
+                    { id: "fin-3", title: "信託業務專業", issuer: "信託業商業同業公會", image: IMAGES.trust, desc: "信託業務實務與法規。" },
+                    { id: "fin-4", title: "銀行內部控制與內部稽核", issuer: "銀行公會", image: IMAGES.bankControl, desc: "銀行內控制度與稽核實務。" },
+                    { id: "fin-5", title: "初階授信人員", issuer: "銀行公會", image: IMAGES.credit, desc: "授信業務基礎實務。" }
                 ]},
                 { category: "國際語言能力", items: [
                     { id: "lang-1", title: "TOEIC 多益英語測驗", issuer: "ETS", image: IMAGES.toeic, desc: "國際商務溝通與閱讀能力認證。" },
@@ -668,7 +693,7 @@
                                 </div>
                             </section>
 
-                            <section id="projects" className="mb-16 relative">
+                            <section id="projects" className="mb-8 relative">
                                 <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-white/5 to-transparent"></div>
                                 {/* 裝飾性元素 */}
                                 <div className="absolute top-8 right-8 w-32 h-32 border border-white/5 rounded-full opacity-20"></div>
@@ -682,66 +707,105 @@
                                 </div>
                             </section>
 
-                            <section id="journey" className="mb-16 relative">
+                            <section id="journey" className="mb-8 relative">
                                 <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-white/5 to-transparent"></div>
                                 {/* 裝飾性元素 */}
                                 <div className="absolute top-12 right-12 w-20 h-20 border border-white/5 rounded-full opacity-15"></div>
                                 <div className="absolute bottom-12 left-12 w-16 h-16 border border-white/5 rounded-full opacity-10"></div>
-                                <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 border-t border-white/5 pt-12 relative mt-16">
+                                <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 border-t border-white/5 pt-8 relative mt-8">
                                     <div className="lg:col-span-4 lg:sticky lg:top-32 h-fit z-10">
                                         <h3 className="text-xs font-bold tracking-[0.6em] text-zinc-600 uppercase mb-6">Selected Journey</h3>
                                         <p className="text-xl font-light text-zinc-400 leading-tight">每一段經歷，都是為了建構更完整的技術視野。</p>
                                     </div>
                                     <div className="lg:col-span-8 space-y-3">
-                                        {experiences.map((exp) => (
-                                            <div key={exp.id} className="group p-10 border border-transparent hover:border-white/10 rounded-3xl transition-all hover:bg-white/[0.02]">
-                                                <div className="flex flex-col md:flex-row items-start gap-6">
-                                                    <div className="space-y-4 flex-1">
-                                                        <span className="text-[10px] font-bold tracking-widest text-zinc-500 uppercase px-2 py-1 border border-zinc-800 rounded">{exp.tag}</span>
-                                                        <h4 className="text-3xl font-light group-hover:translate-x-2 transition-transform">{exp.title}</h4>
-                                                        <p className="text-zinc-500 max-w-lg">{exp.summary}</p>
+                                        {experiences.map((exp, index) => {
+                                            const expRef = useRef(null);
+                                            const isInView = useInView(expRef, { once: true, amount: 0.2 });
+                                            return (
+                                                <motion.div
+                                                    key={exp.id}
+                                                    ref={expRef}
+                                                    initial={{ opacity: 0, y: 50 }}
+                                                    animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 50 }}
+                                                    transition={{ duration: 0.6, delay: index * 0.1 }}
+                                                    className="group p-10 border border-transparent hover:border-white/10 rounded-3xl transition-all hover:bg-white/[0.02]"
+                                                >
+                                                    <div className="flex flex-col md:flex-row items-start gap-6">
+                                                        <div className="space-y-4 flex-1">
+                                                            <span className="text-[10px] font-bold tracking-widest text-zinc-500 uppercase px-2 py-1 border border-zinc-800 rounded">{exp.tag}</span>
+                                                            <h4 className="text-3xl font-light group-hover:translate-x-2 transition-transform">{exp.title}</h4>
+                                                            <p className="text-zinc-500 max-w-lg">{exp.summary}</p>
+                                                        </div>
+                                                        <div className="flex gap-3 items-start flex-shrink-0">
+                                                            {exp.images && exp.images.map((img, idx) => (
+                                                                <div key={idx} onClick={() => setActiveExpModal({...exp, selectedImage: img})} className="cursor-pointer">
+                                                                    <img 
+                                                                        src={img} 
+                                                                        alt={exp.title}
+                                                                        className="w-20 h-20 md:w-24 md:h-24 object-cover rounded-lg grayscale hover:grayscale-0 transition-all duration-300 border border-white/10"
+                                                                        style={{
+                                                                            filter: 'brightness(0.6) grayscale(100%)',
+                                                                            transition: 'filter 0.3s ease'
+                                                                        }}
+                                                                        onMouseEnter={(e) => {
+                                                                            e.target.style.filter = 'brightness(0.8) grayscale(0%)';
+                                                                        }}
+                                                                        onMouseLeave={(e) => {
+                                                                            e.target.style.filter = 'brightness(0.6) grayscale(100%)';
+                                                                        }}
+                                                                    />
+                                                                </div>
+                                                            ))}
+                                                        </div>
                                                     </div>
-                                                    <div className="flex gap-3 items-start flex-shrink-0">
-                                                        {exp.images && exp.images.map((img, idx) => (
-                                                            <div key={idx} onClick={() => setActiveExpModal({...exp, selectedImage: img})} className="cursor-pointer">
-                                                                <img 
-                                                                    src={img} 
-                                                                    alt={exp.title}
-                                                                    className="w-20 h-20 md:w-24 md:h-24 object-cover rounded-lg grayscale hover:grayscale-0 transition-all duration-300 border border-white/10"
-                                                                />
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ))}
+                                                </motion.div>
+                                            );
+                                        })}
                                     </div>
                                 </div>
                             </section>
 
-                            <section id="certs" className="mb-16 relative">
+                            <section id="certs" className="mb-8 relative">
                                 <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-white/5 to-transparent"></div>
                                 {/* 裝飾性元素 */}
                                 <div className="absolute top-16 right-16 w-28 h-28 border border-white/5 rounded-full opacity-12"></div>
                                 <div className="absolute bottom-16 left-16 w-20 h-20 border border-white/5 rounded-full opacity-10"></div>
-                                <div className="mb-16 flex flex-col md:flex-row md:items-end justify-between gap-8 border-t border-white/5 pt-12 mt-16">
+                                <div className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-8 border-t border-white/5 pt-8 mt-8">
                                     <h2 className="text-4xl font-light text-white">專業認證體系</h2>
                                     <p className="text-zinc-500 text-sm max-w-sm">跨足專案管理、自動化開發與金融實務。</p>
                                 </div>
-                                <div className="space-y-16">
-                                    {certificateGroups.map((group, idx) => (
-                                        <div key={idx} className="grid grid-cols-1 lg:grid-cols-12 gap-12">
-                                            <div className="lg:col-span-3 text-xs font-bold tracking-[0.3em] uppercase text-zinc-600">{group.category}</div>
-                                            <div className="lg:col-span-9 grid grid-cols-1 md:grid-cols-2 gap-6">
-                                                {group.items.map((cert) => (
-                                                    <div key={cert.id} onClick={() => setActiveCertModal({...cert, category: group.category})} className="p-10 border border-white/5 rounded-2xl cursor-pointer hover:bg-white/[0.03] transition-all">
-                                                        <h5 className="text-xl font-light mb-2">{cert.title}</h5>
-                                                        <p className="text-zinc-600 text-[10px] tracking-widest uppercase font-bold">{cert.issuer}</p>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    ))}
+                                <div className="space-y-12">
+                                    {certificateGroups.map((group, groupIdx) => {
+                                        const groupRef = useRef(null);
+                                        const isInView = useInView(groupRef, { once: true, amount: 0.2 });
+                                        return (
+                                            <motion.div
+                                                key={groupIdx}
+                                                ref={groupRef}
+                                                initial={{ opacity: 0, y: 50 }}
+                                                animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 50 }}
+                                                transition={{ duration: 0.6, delay: groupIdx * 0.15 }}
+                                                className="grid grid-cols-1 lg:grid-cols-12 gap-12"
+                                            >
+                                                <div className="lg:col-span-3 text-xs font-bold tracking-[0.3em] uppercase text-zinc-600">{group.category}</div>
+                                                <div className="lg:col-span-9 grid grid-cols-1 md:grid-cols-2 gap-6">
+                                                    {group.items.map((cert, certIdx) => (
+                                                        <motion.div
+                                                            key={cert.id}
+                                                            initial={{ opacity: 0, x: -30 }}
+                                                            animate={isInView ? { opacity: 1, x: 0 } : { opacity: 0, x: -30 }}
+                                                            transition={{ duration: 0.5, delay: groupIdx * 0.15 + certIdx * 0.1 }}
+                                                            onClick={() => setActiveCertModal({...cert, category: group.category})}
+                                                            className="p-10 border border-white/5 rounded-2xl cursor-pointer hover:bg-white/[0.03] transition-all"
+                                                        >
+                                                            <h5 className="text-xl font-light mb-2">{cert.title}</h5>
+                                                            <p className="text-zinc-600 text-[10px] tracking-widest uppercase font-bold">{cert.issuer}</p>
+                                                        </motion.div>
+                                                    ))}
+                                                </div>
+                                            </motion.div>
+                                        );
+                                    })}
                                 </div>
                             </section>
 
@@ -906,9 +970,9 @@
                                                 height: '100%'
                                             }}>
                                                 <div style={{
-                                                    width: '166.67%', // 1 / 0.6 = 1.667
-                                                    height: '166.67%',
-                                                    transform: 'scale(0.6)',
+                                                    width: `${100 / iframeScale}%`,
+                                                    height: `${100 / iframeScale}%`,
+                                                    transform: `scale(${iframeScale})`,
                                                     transformOrigin: 'center center',
                                                     position: 'relative'
                                                 }}>
