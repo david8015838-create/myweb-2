@@ -2,8 +2,12 @@
 <html lang="zh-Hant">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#000000">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>Portfolio | Immersive Journey</title>
+    <link rel="manifest" href="/manifest.json">
     <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;700&family=Playfair+Display:italic@400;700&display=swap" rel="stylesheet">
     <!-- Tailwind CSS -->
@@ -17,7 +21,10 @@
     <script src="https://unpkg.com/framer-motion@10.16.4/dist/framer-motion.js"></script>
     
     <style>
-        html { scroll-behavior: smooth; cursor: none; }
+        html { scroll-behavior: smooth; }
+        @media (hover: hover) and (pointer: fine) {
+            html { cursor: none; }
+        }
         body { 
             background-color: #000; 
             color: #e5e5e5; 
@@ -34,11 +41,18 @@
             width: 8px; height: 8px; background: white; border-radius: 50%;
             position: fixed; pointer-events: none; z-index: 9999;
             transform: translate(-50%, -50%); transition: width 0.3s, height 0.3s, background 0.3s;
+            display: none;
         }
         #cursor-outline {
             width: 40px; height: 40px; border: 1px solid rgba(255,255,255,0.3); border-radius: 50%;
             position: fixed; pointer-events: none; z-index: 9998;
             transform: translate(-50%, -50%); transition: all 0.15s ease-out;
+            display: none;
+        }
+        @media (hover: hover) and (pointer: fine) {
+            #cursor-dot, #cursor-outline {
+                display: block;
+            }
         }
 
         /* 背景設計 */
@@ -55,6 +69,33 @@
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; }
+        
+        /* 手機適配 */
+        @media (max-width: 768px) {
+            body {
+                overflow-x: hidden;
+                width: 100%;
+                position: relative;
+            }
+            * {
+                max-width: 100vw;
+                box-sizing: border-box;
+            }
+            #web-content {
+                overflow-x: hidden;
+            }
+            main {
+                overflow-x: hidden;
+                width: 100%;
+            }
+        }
+        
+        /* 防止模態框滾動穿透 */
+        body.modal-open {
+            overflow: hidden;
+            position: fixed;
+            width: 100%;
+        }
     </style>
 </head>
 <body>
@@ -69,7 +110,7 @@
 
         const App = () => {
             const [stage, setStage] = useState('intro3d');
-            const [waitingStart, setWaitingStart] = useState(true);
+            const [waitingStart, setWaitingStart] = useState(true); // 初始狀態：等待辛普森動畫
             const [activeProjectModal, setActiveProjectModal] = useState(false);
             const [activeProjectView, setActiveProjectView] = useState(null);
             const [activeExpModal, setActiveExpModal] = useState(null);
@@ -255,24 +296,15 @@
                 };
                 const onMessage = (ev) => {
                     if (ev.data === 'simpson-finished') {
-                        startStaticNoise();
-                        gsap.set("#static-overlay", { opacity: 0, display: 'block' });
-                        gsap.set("#web-content", { opacity: 0 });
-                        const tl = gsap.timeline({ defaults: { ease: "power2.out" } });
-                        tl.to("#static-overlay", { opacity: 1, duration: 0.15 }, 0);
-                        tl.call(() => {
-                            setStage('web');
-                            document.body.style.overflow = 'auto';
-                        });
-                        tl.to("#web-content", { opacity: 1, duration: 1.0 }, "<0.05");
-                        tl.to("#simpson-overlay", { opacity: 0, duration: 0.8 }, "<");
-                        tl.to("#static-overlay", { opacity: 0, duration: 0.6 }, ">-0.3");
-                        tl.call(() => {
-                            setWaitingStart(false);
-                            stopStaticNoise();
-                            gsap.set("#static-overlay", { display: 'none' });
-                            gsap.set("#canvas-container", { opacity: 0 });
-                        });
+                        // 直接從雜訊切換到個人網頁，無任何中間動畫
+                        setStage('web');
+                        document.body.style.overflow = 'auto';
+                        setWaitingStart(false);
+                        // 立即顯示個人網頁，隱藏所有動畫元素
+                        gsap.set("#web-content", { opacity: 1, display: 'block' });
+                        gsap.set("#simpson-overlay", { display: 'none', opacity: 0 });
+                        gsap.set("#canvas-container", { opacity: 0 });
+                        gsap.set("#static-overlay", { display: 'none', opacity: 0 });
                     }
                 };
                 window.addEventListener('message', onMessage);
@@ -302,24 +334,46 @@
             };
 
             useEffect(() => {
+                // 檢測是否為桌面設備（支持hover和精確指針）
+                const isDesktop = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+                
+                if (!isDesktop) {
+                    // 手機設備，隱藏鼠標跟隨效果
+                    const dot = document.getElementById('cursor-dot');
+                    const outline = document.getElementById('cursor-outline');
+                    if (dot) dot.style.display = 'none';
+                    if (outline) outline.style.display = 'none';
+                    return;
+                }
+                
+                // 桌面設備，顯示並啟用鼠標跟隨效果
                 const dot = document.getElementById('cursor-dot');
                 const outline = document.getElementById('cursor-outline');
+                if (!dot || !outline) return;
+                
+                dot.style.display = 'block';
+                outline.style.display = 'block';
+                
                 const moveCursor = (e) => {
                     dot.style.left = `${e.clientX}px`;
                     dot.style.top = `${e.clientY}px`;
                     outline.animate({ left: `${e.clientX}px`, top: `${e.clientY}px` }, { duration: 500, fill: "forwards" });
                 };
+                
                 window.addEventListener('mousemove', moveCursor);
                 return () => window.removeEventListener('mousemove', moveCursor);
             }, []);
 
             const IMAGES = {
-                google: "https://images.unsplash.com/photo-1573804633927-bfcbcd909acd?q=80&w=2454&auto=format&fit=crop",
-                cia: "https://images.unsplash.com/photo-1475721027785-f74dea327912?q=80&w=2670&auto=format&fit=crop",
-                tamkang: "https://images.unsplash.com/photo-1523050335456-cbb6e2801046?q=80&w=2670&auto=format&fit=crop",
-                n8n: "https://images.unsplash.com/photo-1518433278988-2b2f197c9430?q=80&w=2574&auto=format&fit=crop",
+                google: "google project management.JPG",
+                googleDataAnalytics: "google data analytics.JPG",
+                cia: "CIA獨立公開英文演講.JPG",
+                cia2: "cia演講2.jpg",
+                tamkang: "淡江畢業證書.JPG",
+                n8n: "n8n.JPG",
                 finance: "https://images.unsplash.com/photo-1554224155-6726b3ff858f?q=80&w=2511&auto=format&fit=crop",
-                toeic: "https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?q=80&w=2573&auto=format&fit=crop"
+                toeic: "多益JPG.JPG",
+                cebu: "Cebu internantional academy畢業證書.jpg"
             };
 
             const projects = [
@@ -347,9 +401,14 @@
                     url: "https://david8015838-create.github.io/stock-lens/",
                     desc: "投資資產追蹤與複利試算工具",
                     features: [
-                        "快速開始：+ 新增標的，編輯股數/均價/槓桿/債券屬性",
-                        "刪除資產：垃圾桶圖示確認後移除",
-                        "複利計算：每月投入，從第2個月開始計入"
+                        "資產管理：支援股票、債券、ETF等多種投資標的，可設定股數、均價、槓桿倍數",
+                        "即時追蹤：自動計算總市值、總成本、損益金額與損益百分比",
+                        "複利試算：設定每月固定投入金額，系統自動計算複利效果，從第2個月開始計入本金",
+                        "債券功能：支援債券類型資產，可設定票面利率與到期日",
+                        "槓桿計算：支援槓桿投資，自動計算槓桿後的損益放大效果",
+                        "數據視覺化：以直觀方式呈現各資產占比與整體投資組合表現",
+                        "快速操作：一鍵新增、編輯、刪除資產，操作流程簡潔高效",
+                        "本地儲存：所有數據儲存在本地，保護隱私且無需網路連線"
                     ]
                 },
                 { 
@@ -358,30 +417,37 @@
                     url: "https://david8015838-create.github.io/splitwise-pro/",
                     desc: "多人分帳與雲端即時同步",
                     features: [
-                        "雲端即時同步：輸入房號建立共享空間",
-                        "多人分帳：快速記錄與結算"
+                        "雲端同步：輸入房間號碼即可建立共享空間，所有成員即時看到最新帳務狀態",
+                        "多人分帳：支援任意人數的群組分帳，可設定不同成員的分攤比例",
+                        "多種分帳模式：平均分攤、按比例分攤、自訂金額分攤，滿足各種情境需求",
+                        "帳務記錄：詳細記錄每筆支出的發起人、參與人、金額與備註",
+                        "結算功能：自動計算每位成員應付/應收金額，清楚顯示誰欠誰多少錢",
+                        "即時更新：任何成員新增或修改帳務，其他成員立即看到更新，無需手動刷新",
+                        "歷史查詢：保留完整的分帳歷史記錄，可隨時查看過往帳務明細",
+                        "簡潔介面：直觀的操作介面，快速上手，適合日常使用"
                     ]
                 }
             ];
 
             const experiences = [
-                { id: "tamkang", title: "淡江大學 國際企業學系", subtitle: "Bachelor of International Business", tag: "Education", summary: "深研國際市場分析與商業策略思維。", details: "在淡江大學期間，專注於國際市場趨勢分析、跨國企業策略規劃以及數據導向的商業邏輯。", image: IMAGES.tamkang },
-                { id: "cia", title: "CIA Language School", subtitle: "獨立公開英文演講", tag: "Public Speaking", summary: "於菲律賓期間完成獨立公開專題演講。", details: "挑戰並完成了一場面向大眾的獨立英文演講，磨練了高壓下的表達力。", image: IMAGES.cia },
-                { id: "google", title: "Google Career Certificate", subtitle: "Project Management", tag: "Professional", summary: "取得 Google 官方 PM 認證。", details: "掌握敏捷開發 (Agile) 與 Scrum 框架。", image: IMAGES.google },
-                { id: "n8n", title: "n8n Automation", subtitle: "Workflow Architect", tag: "Technical Skill", summary: "以最快速度將靈感轉化為解決方案。", details: "擅長透過 API 與自動化工具優化商業流程。", image: IMAGES.n8n }
+                { id: "tamkang", title: "淡江大學 國際企業學系", subtitle: "Bachelor of International Business", tag: "Education", summary: "深研國際市場分析與商業策略思維。", details: "在淡江大學期間，專注於國際市場趨勢分析、跨國企業策略規劃以及數據導向的商業邏輯。", image: IMAGES.tamkang, images: [IMAGES.tamkang] },
+                { id: "cia", title: "CIA Language School", subtitle: "獨立公開英文演講", tag: "Public Speaking", summary: "於菲律賓期間完成獨立公開專題演講。", details: "挑戰並完成了一場面向大眾的獨立英文演講，磨練了高壓下的表達力。", image: IMAGES.cia, images: [IMAGES.cia, IMAGES.cia2] },
+                { id: "google", title: "Google Career Certificate", subtitle: "Project Management & Data Analytics", tag: "Professional", summary: "取得 Google 官方 PM 與 Data Analytics 認證。", details: "掌握敏捷開發 (Agile) 與 Scrum 框架，以及數據分析與視覺化技能。", image: IMAGES.google, images: [IMAGES.google, IMAGES.googleDataAnalytics] },
+                { id: "n8n", title: "n8n Automation", subtitle: "Workflow Architect", tag: "Technical Skill", summary: "以最快速度將靈感轉化為解決方案。", details: "擅長透過 API 與自動化工具優化商業流程。", image: IMAGES.n8n, images: [IMAGES.n8n] }
             ];
 
             const certificateGroups = [
                 { category: "Google 數位實作", items: [
                     { id: "goo-1", title: "Project Management", issuer: "Google", image: IMAGES.google, desc: "專案規劃與風險管理。" },
-                    { id: "goo-2", title: "IT Automation", issuer: "Google", image: IMAGES.google, desc: "Python 系統自動化實務。" }
+                    { id: "goo-2", title: "Data Analytics", issuer: "Google", image: IMAGES.googleDataAnalytics, desc: "數據分析與視覺化實務。" }
                 ]},
                 { category: "金融專業資格", items: [
                     { id: "fin-1", title: "證券商高級業務員", issuer: "證基會", image: IMAGES.finance, desc: "證券市場實務與法規。" },
                     { id: "fin-2", title: "投信投顧業務員", issuer: "證基會", image: IMAGES.finance, desc: "資產配置與產品分析。" }
                 ]},
                 { category: "國際語言能力", items: [
-                    { id: "lang-1", title: "TOEIC 多益英語測驗", issuer: "ETS", image: IMAGES.toeic, desc: "國際商務溝通與閱讀能力認證。" }
+                    { id: "lang-1", title: "TOEIC 多益英語測驗", issuer: "ETS", image: IMAGES.toeic, desc: "國際商務溝通與閱讀能力認證。" },
+                    { id: "lang-2", title: "Cebu International Academy", issuer: "CIA", image: IMAGES.cebu, desc: "菲律賓語言學校畢業證書，需向左旋轉90度查看。", needsRotation: true }
                 ]}
             ];
 
@@ -395,29 +461,29 @@
                     {waitingStart && (
                         <div id="simpson-overlay" className="fixed inset-0 z-[150] flex items-center justify-center bg-black">
                             <iframe id="simpson-iframe" src="辛普森動畫index.html" className="absolute inset-0 w-full h-full border-0"></iframe>
-                            <div className="relative z-10 text-center">
-                                <button
-                                    onClick={() => {
-                                        const iframe = document.getElementById('simpson-iframe');
-                                        iframe.contentWindow.postMessage('start-simpson', '*');
-                                    }}
-                                    className="px-10 py-6 text-2xl font-light tracking-widest uppercase text-white bg-white/5 border border-white/20 rounded-full hover:bg-white/10 transition"
-                                >
-                                    ready to start！
-                                </button>
-                            </div>
                         </div>
                     )}
 
                     <canvas id="static-overlay" className="fixed inset-0 z-[250] opacity-0 pointer-events-none"></canvas>
 
                     {/* Stage: Web Content */}
-                    <div id="web-content" className={`relative z-10 transition-opacity duration-1000 ${stage === 'web' ? 'opacity-100 visible' : 'opacity-0 invisible'}`}>
+                    <div id="web-content" className={`relative z-10 ${stage === 'web' ? 'opacity-100 visible' : 'opacity-0 invisible'}`} style={{ display: stage === 'web' ? 'block' : 'none' }}>
                         {/* 背景層 */}
                         <div className="fixed inset-0 z-0 pointer-events-none">
                             <div className="absolute inset-0 bg-grid" />
                             <div className="absolute inset-0 bg-noise" />
                             <div className="absolute top-[5%] left-[5%] w-[50vw] h-[50vw] bg-blue-500/5 rounded-full blur-[140px]" />
+                            <div className="absolute top-[60%] right-[10%] w-[40vw] h-[40vw] bg-purple-500/3 rounded-full blur-[120px]" />
+                            <div className="absolute bottom-[10%] left-[20%] w-[30vw] h-[30vw] bg-cyan-500/4 rounded-full blur-[100px]" />
+                            {/* 裝飾性線條 */}
+                            <div className="absolute top-1/4 left-0 w-full h-px bg-gradient-to-r from-transparent via-white/5 to-transparent" />
+                            <div className="absolute top-1/2 left-0 w-full h-px bg-gradient-to-r from-transparent via-white/3 to-transparent" />
+                            <div className="absolute top-3/4 left-0 w-full h-px bg-gradient-to-r from-transparent via-white/5 to-transparent" />
+                            {/* 裝飾性點 */}
+                            <div className="absolute top-[20%] right-[15%] w-2 h-2 bg-white/10 rounded-full" />
+                            <div className="absolute top-[35%] right-[25%] w-1.5 h-1.5 bg-white/8 rounded-full" />
+                            <div className="absolute top-[50%] left-[15%] w-1 h-1 bg-white/10 rounded-full" />
+                            <div className="absolute bottom-[25%] right-[20%] w-2 h-2 bg-white/8 rounded-full" />
                         </div>
 
                         <motion.div className="fixed top-0 left-0 right-0 h-0.5 bg-white z-[60] origin-left" style={{ scaleX: springProgress }} />
@@ -438,7 +504,7 @@
                         </nav>
 
                         <main className="max-w-7xl mx-auto px-8">
-                            <section className="h-screen flex flex-col justify-center">
+                            <section className="min-h-screen flex flex-col justify-center pb-32">
                                 <p className="text-zinc-500 font-mono text-xs mb-8 tracking-[0.4em] uppercase">Vibe Coder / Architect</p>
                                 <h1 className="text-[10vw] md:text-[8vw] font-light tracking-tighter leading-[0.8] mb-12">
                                     DESIGNING <br />
@@ -450,32 +516,50 @@
                                 </div>
                             </section>
 
-                            <section id="projects" className="mb-64">
-                                <div onClick={() => setActiveProjectModal(true)} className="group relative cursor-pointer border border-white/5 rounded-[2rem] overflow-hidden bg-white/[0.01] hover:bg-white/[0.03] transition-all duration-700">
-                                    <div className="py-40 px-12 flex flex-col items-center text-center">
-                                        <div className="w-16 h-16 border border-zinc-800 rounded-full flex items-center justify-center mb-10 text-2xl font-light text-zinc-500 group-hover:text-white group-hover:border-white/20 transition-all">+</div>
+                            <section id="projects" className="mb-16 relative">
+                                <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-white/5 to-transparent"></div>
+                                {/* 裝飾性元素 */}
+                                <div className="absolute top-8 right-8 w-32 h-32 border border-white/5 rounded-full opacity-20"></div>
+                                <div className="absolute bottom-8 left-8 w-24 h-24 border border-white/5 rounded-full opacity-15"></div>
+                                <div onClick={() => setActiveProjectModal(true)} className="group relative cursor-pointer border border-white/5 rounded-[2rem] overflow-hidden bg-white/[0.01] hover:bg-white/[0.03] transition-all duration-700 mt-16">
+                                    <div className="py-24 px-12 flex flex-col items-center text-center">
+                                        <div className="w-16 h-16 border border-zinc-800 rounded-full flex items-center justify-center mb-8 text-2xl font-light text-zinc-500 group-hover:text-white group-hover:border-white/20 transition-all">+</div>
                                         <h2 className="text-5xl font-light tracking-tight mb-4 text-white">Project Matrix</h2>
                                         <p className="text-zinc-500 text-[10px] uppercase tracking-[0.5em] font-bold">Explore Artifacts</p>
                                     </div>
                                 </div>
                             </section>
 
-                            <section id="journey" className="mb-64">
-                                <div className="grid grid-cols-1 lg:grid-cols-12 gap-20 border-t border-white/5 pt-16 relative">
+                            <section id="journey" className="mb-16 relative">
+                                <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-white/5 to-transparent"></div>
+                                {/* 裝飾性元素 */}
+                                <div className="absolute top-12 right-12 w-20 h-20 border border-white/5 rounded-full opacity-15"></div>
+                                <div className="absolute bottom-12 left-12 w-16 h-16 border border-white/5 rounded-full opacity-10"></div>
+                                <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 border-t border-white/5 pt-12 relative mt-16">
                                     <div className="lg:col-span-4 lg:sticky lg:top-32 h-fit z-10">
-                                        <h3 className="text-xs font-bold tracking-[0.6em] text-zinc-600 uppercase mb-8">Selected Journey</h3>
-                                        <p className="text-2xl font-light text-zinc-400 leading-tight">每一段經歷，都是為了建構更完整的技術視野。</p>
+                                        <h3 className="text-xs font-bold tracking-[0.6em] text-zinc-600 uppercase mb-6">Selected Journey</h3>
+                                        <p className="text-xl font-light text-zinc-400 leading-tight">每一段經歷，都是為了建構更完整的技術視野。</p>
                                     </div>
-                                    <div className="lg:col-span-8 space-y-4">
+                                    <div className="lg:col-span-8 space-y-3">
                                         {experiences.map((exp) => (
-                                            <div key={exp.id} onClick={() => setActiveExpModal(exp)} className="group p-10 border border-transparent hover:border-white/10 rounded-3xl transition-all cursor-pointer hover:bg-white/[0.02]">
-                                                <div className="flex justify-between items-start">
-                                                    <div className="space-y-4">
+                                            <div key={exp.id} className="group p-10 border border-transparent hover:border-white/10 rounded-3xl transition-all hover:bg-white/[0.02]">
+                                                <div className="flex flex-col md:flex-row items-start gap-6">
+                                                    <div className="space-y-4 flex-1">
                                                         <span className="text-[10px] font-bold tracking-widest text-zinc-500 uppercase px-2 py-1 border border-zinc-800 rounded">{exp.tag}</span>
                                                         <h4 className="text-3xl font-light group-hover:translate-x-2 transition-transform">{exp.title}</h4>
                                                         <p className="text-zinc-500 max-w-lg">{exp.summary}</p>
                                                     </div>
-                                                    <div className="opacity-0 group-hover:opacity-100 transition-all text-xl">→</div>
+                                                    <div className="flex gap-3 items-start flex-shrink-0">
+                                                        {exp.images && exp.images.map((img, idx) => (
+                                                            <div key={idx} onClick={() => setActiveExpModal({...exp, selectedImage: img})} className="cursor-pointer">
+                                                                <img 
+                                                                    src={img} 
+                                                                    alt={exp.title}
+                                                                    className="w-20 h-20 md:w-24 md:h-24 object-cover rounded-lg grayscale hover:grayscale-0 transition-all duration-300 border border-white/10"
+                                                                />
+                                                            </div>
+                                                        ))}
+                                                    </div>
                                                 </div>
                                             </div>
                                         ))}
@@ -483,12 +567,16 @@
                                 </div>
                             </section>
 
-                            <section id="certs" className="mb-64">
-                                <div className="mb-24 flex flex-col md:flex-row md:items-end justify-between gap-8 border-t border-white/5 pt-16">
+                            <section id="certs" className="mb-16 relative">
+                                <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-white/5 to-transparent"></div>
+                                {/* 裝飾性元素 */}
+                                <div className="absolute top-16 right-16 w-28 h-28 border border-white/5 rounded-full opacity-12"></div>
+                                <div className="absolute bottom-16 left-16 w-20 h-20 border border-white/5 rounded-full opacity-10"></div>
+                                <div className="mb-16 flex flex-col md:flex-row md:items-end justify-between gap-8 border-t border-white/5 pt-12 mt-16">
                                     <h2 className="text-4xl font-light text-white">專業認證體系</h2>
                                     <p className="text-zinc-500 text-sm max-w-sm">跨足專案管理、自動化開發與金融實務。</p>
                                 </div>
-                                <div className="space-y-32">
+                                <div className="space-y-16">
                                     {certificateGroups.map((group, idx) => (
                                         <div key={idx} className="grid grid-cols-1 lg:grid-cols-12 gap-12">
                                             <div className="lg:col-span-3 text-xs font-bold tracking-[0.3em] uppercase text-zinc-600">{group.category}</div>
@@ -515,17 +603,32 @@
                     {/* Modals */}
                     <AnimatePresence>
                         {activeProjectModal && (
-                            <motion.div key="proj-modal" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[200] flex items-center justify-center p-6">
+                            <motion.div 
+                                key="proj-modal" 
+                                initial={{ opacity: 0 }} 
+                                animate={{ opacity: 1 }} 
+                                exit={{ opacity: 0 }} 
+                                className="fixed inset-0 z-[200] flex items-center justify-center p-4 md:p-6"
+                                onAnimationStart={() => document.body.classList.add('modal-open')}
+                                onAnimationComplete={() => {}}
+                                onExitComplete={() => document.body.classList.remove('modal-open')}
+                            >
                                 <div className="absolute inset-0 bg-black/80 backdrop-blur-3xl" onClick={() => setActiveProjectModal(false)} />
-                                <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="relative max-w-6xl w-full bg-zinc-900 border border-white/10 rounded-[2.5rem] p-12 lg:p-20">
-                                    <div className="flex justify-between items-start mb-20">
-                                        <h2 className="text-5xl font-light text-white">Project Matrix</h2>
-                                        <button onClick={() => setActiveProjectModal(false)} className="text-3xl font-thin">×</button>
+                                <motion.div 
+                                    initial={{ scale: 0.9, opacity: 0 }} 
+                                    animate={{ scale: 1, opacity: 1 }} 
+                                    exit={{ scale: 0.9, opacity: 0 }} 
+                                    className="relative max-w-[95vw] lg:max-w-6xl w-full max-h-[90vh] bg-zinc-900 border border-white/10 rounded-[2.5rem] p-6 md:p-12 lg:p-20 overflow-y-auto custom-scrollbar"
+                                    onClick={(e) => e.stopPropagation()}
+                                >
+                                    <div className="flex justify-between items-start mb-12 md:mb-20">
+                                        <h2 className="text-3xl md:text-5xl font-light text-white">Project Matrix</h2>
+                                        <button onClick={() => setActiveProjectModal(false)} className="text-3xl font-thin hover:text-white transition">×</button>
                                     </div>
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
                                         {projects.map((p) => (
-                                            <div key={p.id} className="p-10 border border-white/5 rounded-3xl hover:bg-white/[0.02] cursor-pointer" onClick={() => setActiveProjectView(p)}>
-                                                <h4 className="text-2xl font-light mb-2 text-white">{p.title}</h4>
+                                            <div key={p.id} className="p-8 md:p-10 border border-white/5 rounded-3xl hover:bg-white/[0.02] cursor-pointer transition-all" onClick={() => setActiveProjectView(p)}>
+                                                <h4 className="text-xl md:text-2xl font-light mb-2 text-white">{p.title}</h4>
                                                 <p className="text-zinc-500 text-sm">{p.desc}</p>
                                             </div>
                                         ))}
@@ -535,14 +638,21 @@
                         )}
 
                         {(activeExpModal || activeCertModal) && (
-                            <motion.div key="info-modal" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[200] flex items-center justify-center p-6">
+                            <motion.div key="info-modal" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[200] flex items-center justify-center p-4 md:p-6">
                                 <div className="absolute inset-0 bg-black/80 backdrop-blur-3xl" onClick={() => { setActiveExpModal(null); setActiveCertModal(null); }} />
-                                <motion.div initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 50, opacity: 0 }} className="relative bg-zinc-900 border border-white/10 max-w-5xl w-full max-h-[85vh] overflow-hidden rounded-[2.5rem] flex flex-col lg:flex-row">
-                                    <div className="lg:w-1/2 bg-zinc-800 h-64 lg:h-auto">
-                                        <img src={(activeExpModal || activeCertModal).image} className="w-full h-full object-cover grayscale opacity-50" />
+                                <motion.div initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 50, opacity: 0 }} className="relative bg-zinc-900 border border-white/10 max-w-5xl w-full max-h-[90vh] md:max-h-[85vh] overflow-hidden rounded-[2.5rem] flex flex-col lg:flex-row">
+                                    <div className="lg:w-1/2 bg-zinc-800 h-64 lg:h-auto relative overflow-hidden flex items-center justify-center">
+                                        <img 
+                                            src={(activeExpModal?.selectedImage || activeExpModal?.image || activeCertModal?.image)} 
+                                            className="w-full h-full object-contain grayscale-0 opacity-100"
+                                            style={{ 
+                                                transform: (activeCertModal?.needsRotation) ? 'rotate(-90deg)' : 'none',
+                                                transition: 'transform 0.3s'
+                                            }}
+                                        />
                                     </div>
-                                    <div className="lg:w-1/2 p-12 lg:p-16 overflow-y-auto custom-scrollbar">
-                                        <button onClick={() => { setActiveExpModal(null); setActiveCertModal(null); }} className="float-right text-2xl font-thin">×</button>
+                                    <div className="lg:w-1/2 p-8 md:p-12 lg:p-16 overflow-y-auto custom-scrollbar">
+                                        <button onClick={() => { setActiveExpModal(null); setActiveCertModal(null); }} className="float-right text-2xl font-thin hover:text-white transition">×</button>
                                         <span className="text-[10px] font-bold tracking-[0.3em] uppercase text-zinc-500">{(activeExpModal || activeCertModal).tag || (activeExpModal || activeCertModal).category}</span>
                                         <h2 className="text-4xl font-light text-white my-8">{(activeExpModal || activeCertModal).title}</h2>
                                         <p className="text-zinc-400 leading-relaxed">{(activeExpModal || activeCertModal).details || (activeExpModal || activeCertModal).desc}</p>
@@ -553,19 +663,34 @@
                     </AnimatePresence>
                     <AnimatePresence>
                         {activeProjectView && (
-                            <motion.div key="proj-view" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[220] flex items-center justify-center p-6">
+                            <motion.div 
+                                key="proj-view" 
+                                initial={{ opacity: 0 }} 
+                                animate={{ opacity: 1 }} 
+                                exit={{ opacity: 0 }} 
+                                className="fixed inset-0 z-[220] flex items-center justify-center p-2 md:p-4 lg:p-6"
+                                onAnimationStart={() => document.body.classList.add('modal-open')}
+                                onExitComplete={() => document.body.classList.remove('modal-open')}
+                            >
                                 <div className="absolute inset-0 bg-black/80 backdrop-blur-3xl" onClick={() => setActiveProjectView(null)} />
-                                <motion.div initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 40, opacity: 0 }} className="relative bg-zinc-900 border border-white/10 max-w-6xl w-full rounded-[2rem] overflow-hidden">
-                                    <div className="flex justify-between items-center px-8 py-6 border-b border-white/10">
-                                        <h3 className="text-2xl font-light text-white">{activeProjectView.title}</h3>
-                                        <button onClick={() => setActiveProjectView(null)} className="text-2xl font-thin">×</button>
+                                <motion.div 
+                                    initial={{ y: 40, opacity: 0 }} 
+                                    animate={{ y: 0, opacity: 1 }} 
+                                    exit={{ y: 40, opacity: 0 }} 
+                                    className="relative bg-zinc-900 border border-white/10 max-w-[95vw] lg:max-w-6xl w-full max-h-[95vh] rounded-[2rem] overflow-hidden flex flex-col"
+                                    onClick={(e) => e.stopPropagation()}
+                                >
+                                    <div className="flex justify-between items-center px-4 md:px-6 lg:px-8 py-4 md:py-6 border-b border-white/10 flex-shrink-0">
+                                        <button onClick={() => { setActiveProjectView(null); setActiveProjectModal(true); }} className="text-sm text-zinc-400 hover:text-white transition mr-4">← 返回</button>
+                                        <h3 className="text-xl md:text-2xl font-light text-white flex-1 text-center">{activeProjectView.title}</h3>
+                                        <button onClick={() => { setActiveProjectView(null); setActiveProjectModal(false); }} className="text-2xl font-thin hover:text-white transition ml-4">×</button>
                                     </div>
-                                    <div className="grid grid-cols-1 lg:grid-cols-2">
-                                        <div className="bg-zinc-800">
-                                            <iframe src={activeProjectView.url} className="w-full h-[60vh] lg:h-[70vh] border-0 bg-black" />
+                                    <div className="grid grid-cols-1 lg:grid-cols-2 flex-1 overflow-hidden min-h-0">
+                                        <div className="bg-zinc-800 overflow-hidden flex items-center justify-center min-h-[40vh] lg:min-h-0">
+                                            <iframe src={activeProjectView.url} className="w-full h-full min-h-[40vh] lg:min-h-0 border-0 bg-black" />
                                         </div>
-                                        <div className="p-8 lg:p-10">
-                                            <h4 className="text-xl font-light text-white mb-4">功能特色</h4>
+                                        <div className="p-4 md:p-6 lg:p-8 lg:p-10 overflow-y-auto custom-scrollbar" onWheel={(e) => e.stopPropagation()}>
+                                            <h4 className="text-lg md:text-xl font-light text-white mb-4">功能特色</h4>
                                             <ul className="space-y-2 text-zinc-400 text-sm">
                                                 {activeProjectView.features.map((f, idx) => (
                                                     <li key={idx}>• {f}</li>
