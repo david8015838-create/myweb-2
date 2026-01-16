@@ -130,11 +130,41 @@
         const App = () => {
             const [stage, setStage] = useState('intro3d');
             const [waitingStart, setWaitingStart] = useState(true); // 初始狀態：等待辛普森動畫
+            const [showTypewriter, setShowTypewriter] = useState(false); // 顯示打字機效果
+            const [typewriterText1, setTypewriterText1] = useState(''); // 第一行文字
+            const [typewriterText2, setTypewriterText2] = useState(''); // 第二行文字
             const [activeProjectModal, setActiveProjectModal] = useState(false);
             const [activeProjectView, setActiveProjectView] = useState(null);
             const [activeExpModal, setActiveExpModal] = useState(null);
             const [activeCertModal, setActiveCertModal] = useState(null);
             const [iframeScale, setIframeScale] = useState(0.6);
+            const [journeyDescription, setJourneyDescription] = useState('');
+            const journeyDescriptionRef = useRef(null);
+            
+            // 經歷描述的打字機效果
+            const journeyInView = useInView(journeyDescriptionRef, { once: false, amount: 0.1 });
+            
+            useEffect(() => {
+                const text = "Connecting the dots of experience to foster a vision that stops learning.";
+                
+                if (!journeyInView) {
+                    setJourneyDescription('');
+                    return;
+                }
+                
+                let index = 0;
+                setJourneyDescription('');
+                const interval = setInterval(() => {
+                    if (index < text.length) {
+                        setJourneyDescription(text.substring(0, index + 1));
+                        index++;
+                    } else {
+                        clearInterval(interval);
+                    }
+                }, 50); // 每個字50ms，比之前的100ms快
+                
+                return () => clearInterval(interval);
+            }, [journeyInView]);
             
             // 根據屏幕大小動態調整iframe縮放
             useEffect(() => {
@@ -334,27 +364,67 @@
                         staticAnimRef.current = null;
                     }
                 };
+                // 打字機效果函數
+                const typewriterEffect = (text, setText, delay = 0) => {
+                    return new Promise((resolve) => {
+                        setTimeout(() => {
+                            let index = 0;
+                            const interval = setInterval(() => {
+                                if (index < text.length) {
+                                    setText(text.substring(0, index + 1));
+                                    index++;
+                                } else {
+                                    clearInterval(interval);
+                                    resolve();
+                                }
+                            }, 100); // 每個字100ms
+                        }, delay);
+                    });
+                };
+
                 const onMessage = (ev) => {
                     console.log('Received message:', ev.data);
                     if (ev.data === 'simpson-finished') {
-                        console.log('Directly switching to personal webpage...');
-                        // 直接切換到個人網頁，隱藏所有動畫元素
+                        console.log('Starting typewriter sequence...');
+                        // 隱藏辛普森動畫
                         setWaitingStart(false);
-                        setStage('web');
-                        document.body.style.overflow = 'auto';
-                        
-                        // 隱藏辛普森動畫和3D場景
                         gsap.set("#simpson-overlay", { display: 'none', opacity: 0 });
                         gsap.set("#canvas-container", { display: 'none', opacity: 0 });
                         gsap.set("#static-overlay", { display: 'none', opacity: 0 });
                         
-                        // 顯示個人網頁
-                        gsap.set("#web-content", { display: 'block' });
-                        gsap.to("#web-content", { 
-                            opacity: 1, 
-                            duration: 0.8,
-                            ease: "power2.out"
-                        });
+                        // 顯示全黑屏幕和打字機效果
+                        setShowTypewriter(true);
+                        
+                        // 開始打字機效果
+                        (async () => {
+                            // 第一行：HI! MY NAME IS OWEN
+                            await typewriterEffect('HI! MY NAME IS OWEN', setTypewriterText1, 500);
+                            // 等待一下再開始第二行
+                            await new Promise(resolve => setTimeout(resolve, 500));
+                            // 第二行：WELCOME TO MY PORTFOLIO
+                            await typewriterEffect('WELCOME TO MY PORTFOLIO', setTypewriterText2, 0);
+                            // 等待一下再切換到個人網頁
+                            await new Promise(resolve => setTimeout(resolve, 1500));
+                            
+                            // 淡出打字機效果
+                            gsap.to("#typewriter-overlay", {
+                                opacity: 0,
+                                duration: 0.8,
+                                ease: "power2.in",
+                                onComplete: () => {
+                                    setShowTypewriter(false);
+                                    // 切換到個人網頁
+                                    setStage('web');
+                                    document.body.style.overflow = 'auto';
+                                    gsap.set("#web-content", { display: 'block' });
+                                    gsap.to("#web-content", { 
+                                        opacity: 1, 
+                                        duration: 0.8,
+                                        ease: "power2.out"
+                                    });
+                                }
+                            });
+                        })();
                     }
                 };
                 window.addEventListener('message', onMessage);
@@ -642,6 +712,36 @@
 
                     <canvas id="static-overlay" className="fixed inset-0 z-[250] opacity-0 pointer-events-none"></canvas>
 
+                    {/* Typewriter Overlay - 全黑屏幕和打字機效果 */}
+                    {showTypewriter && (
+                        <div id="typewriter-overlay" className="fixed inset-0 z-[300] bg-black flex items-center justify-center">
+                            <div className="text-center px-4 max-w-4xl">
+                                <div className="text-2xl sm:text-3xl md:text-5xl lg:text-6xl font-light text-white mb-4 md:mb-6 tracking-wider">
+                                    <div className="min-h-[3rem] md:min-h-[4rem] lg:min-h-[5rem] flex items-center justify-center">
+                                        {typewriterText1}
+                                        {(typewriterText1.length < 'HI! MY NAME IS OWEN'.length || (typewriterText1.length === 'HI! MY NAME IS OWEN'.length && typewriterText2.length === 0)) && (
+                                            <span className="inline-block w-0.5 h-[1em] bg-white ml-2 animate-pulse" style={{ animation: 'blink 1s infinite' }}></span>
+                                        )}
+                                    </div>
+                                </div>
+                                <div className="text-2xl sm:text-3xl md:text-5xl lg:text-6xl font-light text-white tracking-wider">
+                                    <div className="min-h-[3rem] md:min-h-[4rem] lg:min-h-[5rem] flex items-center justify-center">
+                                        {typewriterText2}
+                                        {typewriterText1.length === 'HI! MY NAME IS OWEN'.length && typewriterText2.length < 'WELCOME TO MY PORTFOLIO'.length && (
+                                            <span className="inline-block w-0.5 h-[1em] bg-white ml-2 animate-pulse" style={{ animation: 'blink 1s infinite' }}></span>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                            <style>{`
+                                @keyframes blink {
+                                    0%, 50% { opacity: 1; }
+                                    51%, 100% { opacity: 0; }
+                                }
+                            `}</style>
+                        </div>
+                    )}
+
                     {/* Stage: Web Content */}
                     <div id="web-content" className={`relative z-10 ${stage === 'web' ? 'opacity-100 visible' : 'opacity-0 invisible'}`} style={{ display: stage === 'web' ? 'block' : 'none' }}>
                         {/* 背景層 */}
@@ -665,17 +765,17 @@
                         <motion.div className="fixed top-0 left-0 right-0 h-0.5 bg-white z-[60] origin-left" style={{ scaleX: springProgress }} />
 
                         <nav className="fixed top-0 w-full z-50">
-                            <div className="max-w-7xl mx-auto px-4 md:px-8 h-16 md:h-20 flex items-center justify-between border-b border-white/5 backdrop-blur-md">
-                                <div className="flex items-center gap-2 md:gap-3 font-medium tracking-tighter text-sm md:text-lg uppercase">
-                                    <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
+                            <div className="max-w-7xl mx-auto px-2 sm:px-4 md:px-8 h-14 sm:h-16 md:h-20 flex items-center justify-between border-b border-white/5 backdrop-blur-md">
+                                <div className="flex items-center gap-1 sm:gap-2 md:gap-3 font-medium tracking-tighter text-xs sm:text-sm md:text-lg uppercase flex-shrink-0">
+                                    <div className="w-1 h-1 sm:w-1.5 sm:h-1.5 bg-white rounded-full animate-pulse" />
                                     <span className="hidden sm:inline">Studio Portfolio</span>
-                                    <span className="sm:hidden">Portfolio</span>
+                                    <span className="sm:hidden text-[10px]">Portfolio</span>
                                 </div>
-                                <div className="flex items-center gap-2 md:gap-8 text-[8px] md:text-[10px] tracking-[0.2em] font-medium uppercase text-zinc-500">
-                                    <a href="#projects" className="md:inline">Projects</a>
-                                    <a href="#journey" className="md:inline">Journey</a>
-                                    <a href="#certs" className="md:inline">Certs</a>
-                                    <a href="mailto:connect@example.com" className="text-white border border-white/20 px-3 md:px-6 py-1 md:py-2 rounded-full bg-white/5 text-[8px] md:text-[10px]">Connect</a>
+                                <div className="flex items-center gap-1 sm:gap-2 md:gap-8 text-[7px] sm:text-[8px] md:text-[10px] tracking-[0.15em] sm:tracking-[0.2em] font-medium uppercase text-zinc-500 flex-shrink-0">
+                                    <a href="#projects" className="md:inline whitespace-nowrap">Projects</a>
+                                    <a href="#journey" className="md:inline whitespace-nowrap">Journey</a>
+                                    <a href="#certs" className="md:inline whitespace-nowrap">Certs</a>
+                                    <a href="mailto:connect@example.com" className="text-white border border-white/20 px-2 sm:px-3 md:px-6 py-0.5 sm:py-1 md:py-2 rounded-full bg-white/5 text-[7px] sm:text-[8px] md:text-[10px] whitespace-nowrap">Connect</a>
                                 </div>
                             </div>
                         </nav>
@@ -693,71 +793,257 @@
                                 </div>
                             </section>
 
-                            <section id="projects" className="mb-8 relative">
+                            <section id="projects" className="mb-8 relative overflow-visible">
                                 <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-white/5 to-transparent"></div>
                                 {/* 裝飾性元素 */}
                                 <div className="absolute top-8 right-8 w-32 h-32 border border-white/5 rounded-full opacity-20"></div>
                                 <div className="absolute bottom-8 left-8 w-24 h-24 border border-white/5 rounded-full opacity-15"></div>
-                                <div onClick={() => setActiveProjectModal(true)} className="group relative cursor-pointer border border-white/5 rounded-[2rem] overflow-hidden bg-white/[0.01] hover:bg-white/[0.03] transition-all duration-700 mt-8">
-                                    <div className="py-24 px-12 flex flex-col items-center text-center">
-                                        <div className="w-16 h-16 border border-zinc-800 rounded-full flex items-center justify-center mb-8 text-2xl font-light text-zinc-500 group-hover:text-white group-hover:border-white/20 transition-all">+</div>
-                                        <h2 className="text-5xl font-light tracking-tight mb-4 text-white">Project Matrix</h2>
-                                        <p className="text-zinc-500 text-[10px] uppercase tracking-[0.5em] font-bold">Explore Artifacts</p>
+                                
+                                {/* Section 下方的格子背景效果 - 手機和電腦都顯示 */}
+                                <div className="absolute -bottom-4 left-0 right-0 h-32 opacity-[0.02] pointer-events-none" style={{
+                                    backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)',
+                                    backgroundSize: '30px 30px',
+                                    backgroundPosition: '0 0, 0 0'
+                                }}></div>
+                                <div 
+                                    onClick={() => setActiveProjectModal(true)} 
+                                    className="group relative cursor-pointer border border-white/10 rounded-[2.5rem] overflow-hidden bg-gradient-to-br from-white/[0.02] to-white/[0.005] hover:from-white/[0.05] hover:to-white/[0.02] transition-all duration-700 mt-8 backdrop-blur-sm shadow-[0_8px_32px_0_rgba(0,0,0,0.3)] hover:shadow-[0_12px_48px_0_rgba(255,255,255,0.1)]"
+                                    style={{
+                                        position: 'relative',
+                                        isolation: 'isolate'
+                                    }}
+                                >
+                                    {/* 背景光暈效果 */}
+                                    <div className="absolute inset-0 bg-gradient-to-r from-blue-500/0 via-purple-500/5 to-cyan-500/0 opacity-0 group-hover:opacity-100 transition-opacity duration-700"></div>
+                                    
+                                    {/* 裝飾性網格背景 - 更明顯 */}
+                                    <div className="absolute inset-0 opacity-[0.05] group-hover:opacity-[0.1] transition-opacity duration-700" style={{
+                                        backgroundImage: 'linear-gradient(rgba(255,255,255,0.15) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.15) 1px, transparent 1px)',
+                                        backgroundSize: '30px 30px',
+                                        backgroundPosition: '0 0, 0 0'
+                                    }}></div>
+                                    
+                                    {/* 下方格子效果 - 延伸到卡片外 */}
+                                    <div className="absolute -bottom-8 left-0 right-0 h-24 opacity-[0.03] group-hover:opacity-[0.06] transition-opacity duration-700 pointer-events-none" style={{
+                                        backgroundImage: 'linear-gradient(rgba(255,255,255,0.15) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.15) 1px, transparent 1px)',
+                                        backgroundSize: '30px 30px',
+                                        backgroundPosition: '0 0, 0 0'
+                                    }}></div>
+                                    
+                                    {/* 邊框光效 */}
+                                    <div className="absolute inset-0 rounded-[2.5rem] border border-white/10 group-hover:border-white/20 transition-all duration-700"></div>
+                                    <div className="absolute -inset-[1px] rounded-[2.5rem] bg-gradient-to-r from-blue-500/0 via-purple-500/20 to-cyan-500/0 opacity-0 group-hover:opacity-100 blur-xl transition-opacity duration-700 -z-10"></div>
+                                    
+                                    <div className="py-32 px-12 flex flex-col items-center text-center relative z-10">
+                                        {/* 加號圖標 - 更精緻 */}
+                                        <div className="relative mb-10">
+                                            <div className="w-20 h-20 border-2 border-zinc-700/50 rounded-full flex items-center justify-center text-3xl font-extralight text-zinc-400 group-hover:text-white group-hover:border-white/40 transition-all duration-500 group-hover:scale-110 group-hover:rotate-90">
+                                                <span className="relative z-10">+</span>
+                                            </div>
+                                            {/* 加號周圍的光暈 */}
+                                            <div className="absolute inset-0 rounded-full bg-white/5 blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+                                        </div>
+                                        
+                                        {/* 標題 - 更突出 */}
+                                        <h2 className="text-6xl md:text-7xl font-light tracking-tighter mb-6 text-white group-hover:text-transparent group-hover:bg-clip-text group-hover:bg-gradient-to-r group-hover:from-white group-hover:via-zinc-300 group-hover:to-white transition-all duration-700">
+                                            Project Matrix
+                                        </h2>
+                                        
+                                        {/* 副標題 - 更精緻 */}
+                                        <div className="flex items-center gap-4 mb-2">
+                                            <div className="h-px w-12 bg-gradient-to-r from-transparent to-zinc-600 group-hover:to-zinc-400 transition-colors duration-500"></div>
+                                            <p className="text-zinc-400 text-[11px] uppercase tracking-[0.6em] font-medium group-hover:text-zinc-300 transition-colors duration-500">
+                                                Explore Artifacts
+                                            </p>
+                                            <div className="h-px w-12 bg-gradient-to-l from-transparent to-zinc-600 group-hover:to-zinc-400 transition-colors duration-500"></div>
+                                        </div>
+                                        
+                                        {/* 提示文字 */}
+                                        <p className="text-zinc-600 text-xs mt-4 opacity-0 group-hover:opacity-100 transition-opacity duration-500">
+                                            Click to discover
+                                        </p>
                                     </div>
+                                    
+                                    {/* 角落裝飾 */}
+                                    <div className="absolute top-4 right-4 w-2 h-2 bg-zinc-700/30 rounded-full group-hover:bg-white/20 transition-colors duration-500"></div>
+                                    <div className="absolute bottom-4 left-4 w-1.5 h-1.5 bg-zinc-700/30 rounded-full group-hover:bg-white/20 transition-colors duration-500"></div>
                                 </div>
                             </section>
 
-                            <section id="journey" className="mb-8 relative">
+                            <section id="journey" className="mb-8 relative overflow-visible">
                                 <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-white/5 to-transparent"></div>
                                 {/* 裝飾性元素 */}
                                 <div className="absolute top-12 right-12 w-20 h-20 border border-white/5 rounded-full opacity-15"></div>
                                 <div className="absolute bottom-12 left-12 w-16 h-16 border border-white/5 rounded-full opacity-10"></div>
+                                
+                                {/* Section 下方的格子背景效果 */}
+                                <div className="absolute -bottom-4 left-0 right-0 h-32 opacity-[0.02] pointer-events-none" style={{
+                                    backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)',
+                                    backgroundSize: '30px 30px',
+                                    backgroundPosition: '0 0, 0 0'
+                                }}></div>
                                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 border-t border-white/5 pt-8 relative mt-8">
                                     <div className="lg:col-span-4 lg:sticky lg:top-32 h-fit z-10">
                                         <h3 className="text-xs font-bold tracking-[0.6em] text-zinc-600 uppercase mb-6">Selected Journey</h3>
-                                        <p className="text-xl font-light text-zinc-400 leading-tight">每一段經歷，都是為了建構更完整的技術視野。</p>
+                                        <p ref={journeyDescriptionRef} className="text-xl font-light text-zinc-400 leading-tight min-h-[1.5em]">
+                                            {journeyDescription}
+                                            {journeyDescription.length < "Connecting the dots of experience to foster a vision that stops learning.".length && (
+                                                <span className="animate-pulse ml-1">|</span>
+                                            )}
+                                        </p>
                                     </div>
-                                    <div className="lg:col-span-8 space-y-3">
+                                    <div className="lg:col-span-8 space-y-3 relative pl-8 md:pl-0">
+                                        {/* 時間軸 - 垂直線（桌面版） */}
+                                        <div className="absolute left-0 top-0 bottom-0 w-px bg-gradient-to-b from-transparent via-white/10 to-transparent hidden md:block" style={{
+                                            left: '20px'
+                                        }}></div>
+                                        
+                                        {/* 時間軸 - 垂直線（手機版） */}
+                                        <div className="absolute left-4 top-0 bottom-0 w-px bg-gradient-to-b from-transparent via-white/10 to-transparent md:hidden"></div>
+                                        
                                         {experiences.map((exp, index) => {
                                             const expRef = useRef(null);
-                                            const isInView = useInView(expRef, { once: true, amount: 0.2 });
+                                            const isInView = useInView(expRef, { once: false, amount: 0.2 });
+                                            const isLast = index === experiences.length - 1;
                                             return (
                                                 <motion.div
                                                     key={exp.id}
                                                     ref={expRef}
-                                                    initial={{ opacity: 0, y: 50 }}
-                                                    animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 50 }}
-                                                    transition={{ duration: 0.6, delay: index * 0.1 }}
-                                                    className="group p-10 border border-transparent hover:border-white/10 rounded-3xl transition-all hover:bg-white/[0.02]"
+                                                    initial={{ 
+                                                        opacity: 0, 
+                                                        y: 50,
+                                                        x: 30,
+                                                        filter: 'brightness(0.5)'
+                                                    }}
+                                                    animate={isInView ? { 
+                                                        opacity: 1, 
+                                                        y: 0,
+                                                        x: 0,
+                                                        filter: 'brightness(1)'
+                                                    } : { 
+                                                        opacity: 0, 
+                                                        y: 50,
+                                                        x: 30,
+                                                        filter: 'brightness(0.5)'
+                                                    }}
+                                                    transition={{ 
+                                                        duration: 0.8, 
+                                                        delay: index * 0.15,
+                                                        ease: [0.25, 0.1, 0.25, 1]
+                                                    }}
+                                                    className="group relative py-8 md:py-12 transition-all duration-500 md:pl-12"
                                                 >
-                                                    <div className="flex flex-col md:flex-row items-start gap-6">
-                                                        <div className="space-y-4 flex-1">
-                                                            <span className="text-[10px] font-bold tracking-widest text-zinc-500 uppercase px-2 py-1 border border-zinc-800 rounded">{exp.tag}</span>
-                                                            <h4 className="text-3xl font-light group-hover:translate-x-2 transition-transform">{exp.title}</h4>
-                                                            <p className="text-zinc-500 max-w-lg">{exp.summary}</p>
-                                                        </div>
-                                                        <div className="flex gap-3 items-start flex-shrink-0">
-                                                            {exp.images && exp.images.map((img, idx) => (
-                                                                <div key={idx} onClick={() => setActiveExpModal({...exp, selectedImage: img})} className="cursor-pointer">
-                                                                    <img 
-                                                                        src={img} 
-                                                                        alt={exp.title}
-                                                                        className="w-20 h-20 md:w-24 md:h-24 object-cover rounded-lg grayscale hover:grayscale-0 transition-all duration-300 border border-white/10"
-                                                                        style={{
-                                                                            filter: 'brightness(0.6) grayscale(100%)',
-                                                                            transition: 'filter 0.3s ease'
-                                                                        }}
-                                                                        onMouseEnter={(e) => {
-                                                                            e.target.style.filter = 'brightness(0.8) grayscale(0%)';
-                                                                        }}
-                                                                        onMouseLeave={(e) => {
-                                                                            e.target.style.filter = 'brightness(0.6) grayscale(100%)';
-                                                                        }}
-                                                                    />
-                                                                </div>
-                                                            ))}
-                                                        </div>
+                                                    {/* 左側裝飾線（桌面版） */}
+                                                    <div className="absolute left-0 top-0 bottom-0 w-px bg-gradient-to-b from-transparent via-white/5 to-transparent hidden md:block opacity-0 group-hover:opacity-100 transition-opacity duration-500" style={{
+                                                        left: '20px',
+                                                        transform: 'translateX(-50%)',
+                                                        height: '100%'
+                                                    }}></div>
+                                                    
+                                                    {/* 時間軸節點（桌面版） */}
+                                                    <div className="absolute left-0 top-1/2 -translate-y-1/2 hidden md:flex items-center justify-center" style={{
+                                                        left: '20px',
+                                                        width: '12px',
+                                                        height: '12px',
+                                                        transform: 'translate(-50%, -50%)'
+                                                    }}>
+                                                        {/* 外圈光暈 */}
+                                                        <div className="absolute inset-0 rounded-full bg-white/10 blur-md opacity-0 group-hover:opacity-100 transition-opacity duration-500" style={{
+                                                            width: '24px',
+                                                            height: '24px'
+                                                        }}></div>
+                                                        {/* 節點圓點 */}
+                                                        <div className="relative w-3 h-3 rounded-full bg-white/20 border-2 border-white/30 group-hover:bg-white/40 group-hover:border-white/50 transition-all duration-500 group-hover:scale-125 z-10"></div>
+                                                        {/* 內圈 */}
+                                                        <div className="absolute inset-0 rounded-full bg-white/5 group-hover:bg-white/10 transition-all duration-500" style={{
+                                                            width: '8px',
+                                                            height: '8px'
+                                                        }}></div>
                                                     </div>
+                                                    
+                                                    {/* 時間軸節點（手機版） */}
+                                                    <div className="absolute left-0 top-6 flex items-center justify-center md:hidden" style={{
+                                                        left: '16px',
+                                                        width: '8px',
+                                                        height: '8px',
+                                                        transform: 'translate(-50%, 0)'
+                                                    }}>
+                                                        <div className="relative w-2 h-2 rounded-full bg-white/20 border border-white/30 group-hover:bg-white/40 group-hover:border-white/50 transition-all duration-500"></div>
+                                                    </div>
+                                                    
+                                                    {/* 內容區域 */}
+                                                    <motion.div 
+                                                        className="relative"
+                                                        initial={{ opacity: 0 }}
+                                                        animate={isInView ? { opacity: 1 } : { opacity: 0 }}
+                                                        transition={{ duration: 0.6, delay: index * 0.15 + 0.3 }}
+                                                    >
+                                                        <div className="flex flex-col md:flex-row items-start gap-6">
+                                                            <div className="space-y-4 flex-1">
+                                                                <motion.span 
+                                                                    className="text-[10px] font-bold tracking-widest text-zinc-500 uppercase px-2 py-1 border border-zinc-800 rounded inline-block"
+                                                                    initial={{ opacity: 0, scale: 0.8 }}
+                                                                    animate={isInView ? { opacity: 1, scale: 1 } : { opacity: 0, scale: 0.8 }}
+                                                                    transition={{ duration: 0.4, delay: index * 0.15 + 0.4 }}
+                                                                >
+                                                                    {exp.tag}
+                                                                </motion.span>
+                                                                <motion.h4 
+                                                                    className="text-3xl font-light group-hover:translate-x-2 transition-transform"
+                                                                    initial={{ opacity: 0, x: -20 }}
+                                                                    animate={isInView ? { opacity: 1, x: 0 } : { opacity: 0, x: -20 }}
+                                                                    transition={{ duration: 0.6, delay: index * 0.15 + 0.5 }}
+                                                                    style={{
+                                                                        color: isInView ? '#ffffff' : '#71717a'
+                                                                    }}
+                                                                >
+                                                                    {exp.title}
+                                                                </motion.h4>
+                                                                <motion.p 
+                                                                    className="text-zinc-500 max-w-lg leading-relaxed"
+                                                                    initial={{ opacity: 0 }}
+                                                                    animate={isInView ? { opacity: 1 } : { opacity: 0 }}
+                                                                    transition={{ duration: 0.6, delay: index * 0.15 + 0.6 }}
+                                                                    style={{
+                                                                        color: isInView ? '#71717a' : '#3f3f46'
+                                                                    }}
+                                                                >
+                                                                    {exp.summary}
+                                                                </motion.p>
+                                                            </div>
+                                                            <div className="flex gap-3 items-start flex-shrink-0">
+                                                                {exp.images && exp.images.map((img, idx) => (
+                                                                    <div key={idx} onClick={() => setActiveExpModal({...exp, selectedImage: img})} className="cursor-pointer">
+                                                                        <img 
+                                                                            src={img} 
+                                                                            alt={exp.title}
+                                                                            className="w-20 h-20 md:w-24 md:h-24 object-cover rounded-lg grayscale hover:grayscale-0 transition-all duration-300 border border-white/10"
+                                                                            style={{
+                                                                                filter: 'brightness(0.6) grayscale(100%)',
+                                                                                transition: 'filter 0.3s ease'
+                                                                            }}
+                                                                            onMouseEnter={(e) => {
+                                                                                e.target.style.filter = 'brightness(0.8) grayscale(0%)';
+                                                                            }}
+                                                                            onMouseLeave={(e) => {
+                                                                                e.target.style.filter = 'brightness(0.6) grayscale(100%)';
+                                                                            }}
+                                                                        />
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                        
+                                                        {/* 底部分割線 */}
+                                                        {!isLast && (
+                                                            <motion.div 
+                                                                className="mt-8 md:mt-12 h-px bg-gradient-to-r from-transparent via-white/5 to-transparent"
+                                                                initial={{ scaleX: 0 }}
+                                                                animate={isInView ? { scaleX: 1 } : { scaleX: 0 }}
+                                                                transition={{ duration: 0.6, delay: index * 0.15 + 0.8 }}
+                                                            ></motion.div>
+                                                        )}
+                                                    </motion.div>
                                                 </motion.div>
                                             );
                                         })}
@@ -765,11 +1051,18 @@
                                 </div>
                             </section>
 
-                            <section id="certs" className="mb-8 relative">
+                            <section id="certs" className="mb-8 relative overflow-visible">
                                 <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-white/5 to-transparent"></div>
                                 {/* 裝飾性元素 */}
                                 <div className="absolute top-16 right-16 w-28 h-28 border border-white/5 rounded-full opacity-12"></div>
                                 <div className="absolute bottom-16 left-16 w-20 h-20 border border-white/5 rounded-full opacity-10"></div>
+                                
+                                {/* Section 下方的格子背景效果 */}
+                                <div className="absolute -bottom-4 left-0 right-0 h-32 opacity-[0.02] pointer-events-none" style={{
+                                    backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)',
+                                    backgroundSize: '30px 30px',
+                                    backgroundPosition: '0 0, 0 0'
+                                }}></div>
                                 <div className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-8 border-t border-white/5 pt-8 mt-8">
                                     <h2 className="text-4xl font-light text-white">專業認證體系</h2>
                                     <p className="text-zinc-500 text-sm max-w-sm">跨足專案管理、自動化開發與金融實務。</p>
@@ -777,7 +1070,7 @@
                                 <div className="space-y-12">
                                     {certificateGroups.map((group, groupIdx) => {
                                         const groupRef = useRef(null);
-                                        const isInView = useInView(groupRef, { once: true, amount: 0.2 });
+                                        const isInView = useInView(groupRef, { once: false, amount: 0.2 });
                                         return (
                                             <motion.div
                                                 key={groupIdx}
@@ -796,10 +1089,23 @@
                                                             animate={isInView ? { opacity: 1, x: 0 } : { opacity: 0, x: -30 }}
                                                             transition={{ duration: 0.5, delay: groupIdx * 0.15 + certIdx * 0.1 }}
                                                             onClick={() => setActiveCertModal({...cert, category: group.category})}
-                                                            className="p-10 border border-white/5 rounded-2xl cursor-pointer hover:bg-white/[0.03] transition-all"
+                                                            className="p-10 border border-white/5 rounded-2xl cursor-pointer hover:bg-white/[0.03] transition-all relative overflow-hidden backdrop-blur-sm group"
+                                                            style={{
+                                                                position: 'relative',
+                                                                isolation: 'isolate'
+                                                            }}
                                                         >
-                                                            <h5 className="text-xl font-light mb-2">{cert.title}</h5>
-                                                            <p className="text-zinc-600 text-[10px] tracking-widest uppercase font-bold">{cert.issuer}</p>
+                                                            {/* 格子背景效果 */}
+                                                            <div className="absolute inset-0 opacity-[0.03] group-hover:opacity-[0.06] transition-opacity duration-700 pointer-events-none" style={{
+                                                                backgroundImage: 'linear-gradient(rgba(255,255,255,0.15) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.15) 1px, transparent 1px)',
+                                                                backgroundSize: '30px 30px',
+                                                                backgroundPosition: '0 0, 0 0'
+                                                            }}></div>
+                                                            
+                                                            <div className="relative z-10">
+                                                                <h5 className="text-xl font-light mb-2">{cert.title}</h5>
+                                                                <p className="text-zinc-600 text-[10px] tracking-widest uppercase font-bold">{cert.issuer}</p>
+                                                            </div>
                                                         </motion.div>
                                                     ))}
                                                 </div>
