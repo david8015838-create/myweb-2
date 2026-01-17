@@ -191,17 +191,14 @@
                             gsap.set(videoElement, { scale: 1, transformOrigin: 'center center' });
                             
                             // 創建連續平滑的放大動畫 - 進一步縮短時間
+                            // 優化：讓 GSAP 直接操作 DOM，移除 onUpdate 中的 state 更新以提升性能
                             zoomAnimationRef.current = gsap.to(videoElement, {
                                 scale: 3,
                                 duration: remainingTime * 0.5, // 縮短到50%的時間，大幅加快放大速度
                                 ease: "power4.in", // 使用最快的加速曲線，讓放大更迅速
-                                onUpdate: () => {
-                                    // 同步更新 state，確保顯示正確
-                                    const currentScale = gsap.getProperty(videoElement, "scale");
-                                    setVideoScale(currentScale);
-                                },
+                                // 移除 onUpdate 避免頻繁的 state 更新導致的重渲染
                                 onComplete: () => {
-                                    setVideoScale(3);
+                                    setVideoScale(3); // 只在完成時更新一次
                                 }
                             });
                         }
@@ -1446,7 +1443,7 @@
                             <video 
                                 ref={videoRef}
                                 id="intro-video"
-                                src="外星人看電視的動畫影片.mp4"
+                                src={encodeURI("外星人看電視的動畫影片.mp4")}
                                 className="absolute inset-0 w-full h-full object-cover"
                                 muted
                                 playsInline
@@ -1460,7 +1457,29 @@
                                     objectFit: 'cover',
                                     transform: `scale(${videoScale})`,
                                     transformOrigin: 'center center',
-                                    zIndex: 10
+                                    zIndex: 10,
+                                    willChange: 'transform', // 優化：使用 GPU 加速
+                                    backfaceVisibility: 'hidden' // 優化：提升渲染性能
+                                }}
+                                onLoadedMetadata={() => {
+                                    console.log('Video metadata loaded successfully');
+                                    const video = videoRef.current;
+                                    if (video) {
+                                        console.log('Video duration:', video.duration);
+                                        console.log('Video readyState:', video.readyState);
+                                    }
+                                }}
+                                onError={(e) => {
+                                    console.error('Video loading error:', e);
+                                    const video = e.target;
+                                    if (video) {
+                                        console.error('Video error code:', video.error);
+                                        console.error('Video error message:', video.error?.message);
+                                        console.error('Video src:', video.src);
+                                    }
+                                }}
+                                onCanPlay={() => {
+                                    console.log('Video can play - ready to start');
                                 }}
                                 onEnded={() => {
                                     // 如果還沒觸發切換（保險措施），在視頻結束時切換
@@ -1475,6 +1494,18 @@
                                     }
                                 }}
                             ></video>
+                            
+                            {/* 遮擋 VEO 水印的覆蓋層 - 右下角 */}
+                            <div style={{
+                                position: 'absolute',
+                                bottom: 0,
+                                right: 0,
+                                width: '120px',
+                                height: '40px',
+                                background: 'linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.7) 60%, transparent 100%)',
+                                zIndex: 15,
+                                pointerEvents: 'none'
+                            }}></div>
                             
                             {/* UI Overlay - 保留按钮和文字 */}
                             <div className="ui-overlay w-screen h-screen absolute inset-0 z-20">
