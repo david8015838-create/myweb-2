@@ -190,11 +190,11 @@
                             // 設置初始 scale
                             gsap.set(videoElement, { scale: 1, transformOrigin: 'center center' });
                             
-                            // 創建連續平滑的放大動畫
+                            // 創建連續平滑的放大動畫 - 進一步縮短時間
                             zoomAnimationRef.current = gsap.to(videoElement, {
                                 scale: 3,
-                                duration: remainingTime,
-                                ease: "power2.in", // 使用加速曲線，模擬鏡頭推進，逐漸加快
+                                duration: remainingTime * 0.5, // 縮短到50%的時間，大幅加快放大速度
+                                ease: "power4.in", // 使用最快的加速曲線，讓放大更迅速
                                 onUpdate: () => {
                                     // 同步更新 state，確保顯示正確
                                     const currentScale = gsap.getProperty(videoElement, "scale");
@@ -207,10 +207,10 @@
                         }
                     }
                     
-                    // 在85%時提前觸發切換，更早切到打字機效果
-                    if (progress >= 0.85 && !window.videoSwitchTriggered) {
+                    // 在55%時提前觸發切換，縮短後半部影片時間
+                    if (progress >= 0.55 && !window.videoSwitchTriggered) {
                         window.videoSwitchTriggered = true;
-                        console.log('Video progress 85%, switching early to typewriter...');
+                        console.log('Video progress 55%, switching early to typewriter...');
                         // 確保視頻已經完全放大
                         setVideoScale(3);
                         // 提前觸發切換到打字機效果
@@ -608,7 +608,7 @@
                                     clearInterval(interval);
                                     resolve();
                                 }
-                            }, 100); // 每個字100ms
+                            }, 50); // 每個字50ms，加速顯示
                         }, delay);
                     });
                 };
@@ -630,14 +630,14 @@
                         
                         // 開始打字機效果
                         (async () => {
-                            // 第一行：HI! MY NAME IS OWEN
-                            await typewriterEffect('HI! MY NAME IS OWEN', setTypewriterText1, 500);
+                            // 第一行：HI! MY NAME IS OWEN - 加速顯示
+                            await typewriterEffect('HI! MY NAME IS OWEN', setTypewriterText1, 200);
                             // 等待一下再開始第二行
-                            await new Promise(resolve => setTimeout(resolve, 500));
+                            await new Promise(resolve => setTimeout(resolve, 300));
                             // 第二行：WELCOME TO MY PORTFOLIO
                             await typewriterEffect('WELCOME TO MY PORTFOLIO', setTypewriterText2, 0);
                             // 等待一下再切換到個人網頁
-                            await new Promise(resolve => setTimeout(resolve, 1500));
+                            await new Promise(resolve => setTimeout(resolve, 1000));
                             
                             // 淡出打字機效果
                             gsap.to("#typewriter-overlay", {
