@@ -100,6 +100,26 @@
                 gap: 0.5rem;
                 flex-wrap: wrap;
             }
+            /* 確保外星人影片在手機上正確顯示 */
+            #simpson-overlay {
+                position: fixed !important;
+                top: 0 !important;
+                left: 0 !important;
+                right: 0 !important;
+                bottom: 0 !important;
+                width: 100vw !important;
+                height: 100vh !important;
+                z-index: 150 !important;
+            }
+            #intro-video {
+                position: absolute !important;
+                top: 0 !important;
+                left: 0 !important;
+                width: 100% !important;
+                height: 100% !important;
+                object-fit: cover !important;
+                z-index: 10 !important;
+            }
         }
         
         /* 防止模態框滾動穿透 */
@@ -142,6 +162,72 @@
             const [journeyDescription, setJourneyDescription] = useState('');
             const journeyDescriptionRef = useRef(null);
             const iframeRef = useRef(null);
+            const videoRef = useRef(null);
+            const [videoPlaying, setVideoPlaying] = useState(false);
+            const [videoScale, setVideoScale] = useState(1); // 用於動態縮放視頻
+            const zoomAnimationRef = useRef(null); // 用於儲存 GSAP 動畫引用
+            
+            // 設置視頻放大動畫 - 使用 GSAP 創建連續平滑的動畫
+            useEffect(() => {
+                const video = videoRef.current;
+                if (!video || !videoPlaying) return;
+                
+                const checkVideoProgress = () => {
+                    if (!video.duration) return;
+                    
+                    const currentTime = video.currentTime;
+                    const duration = video.duration;
+                    const progress = currentTime / duration;
+                    
+                    // 在15%時開始放大，讓過程更早且更連貫
+                    if (progress >= 0.15 && !zoomAnimationRef.current) {
+                        // 計算剩餘時間
+                        const remainingTime = duration - currentTime;
+                        
+                        // 使用 GSAP 直接操作視頻元素的 transform，創建連續平滑的放大動畫
+                        const videoElement = document.getElementById('intro-video');
+                        if (videoElement) {
+                            // 設置初始 scale
+                            gsap.set(videoElement, { scale: 1, transformOrigin: 'center center' });
+                            
+                            // 創建連續平滑的放大動畫
+                            zoomAnimationRef.current = gsap.to(videoElement, {
+                                scale: 3,
+                                duration: remainingTime,
+                                ease: "power2.in", // 使用加速曲線，模擬鏡頭推進，逐漸加快
+                                onUpdate: () => {
+                                    // 同步更新 state，確保顯示正確
+                                    const currentScale = gsap.getProperty(videoElement, "scale");
+                                    setVideoScale(currentScale);
+                                },
+                                onComplete: () => {
+                                    setVideoScale(3);
+                                }
+                            });
+                        }
+                    }
+                    
+                    // 在85%時提前觸發切換，更早切到打字機效果
+                    if (progress >= 0.85 && !window.videoSwitchTriggered) {
+                        window.videoSwitchTriggered = true;
+                        console.log('Video progress 85%, switching early to typewriter...');
+                        // 確保視頻已經完全放大
+                        setVideoScale(3);
+                        // 提前觸發切換到打字機效果
+                        window.postMessage('simpson-finished', '*');
+                    }
+                };
+                
+                const interval = setInterval(checkVideoProgress, 50); // 每50ms檢查一次，更頻繁
+                
+                return () => {
+                    clearInterval(interval);
+                    if (zoomAnimationRef.current) {
+                        zoomAnimationRef.current.kill();
+                        zoomAnimationRef.current = null;
+                    }
+                };
+            }, [videoPlaying]);
             
             // 經歷描述的打字機效果
             const journeyInView = useInView(journeyDescriptionRef, { once: false, amount: 0.1 });
@@ -531,7 +617,9 @@
                     console.log('Received message:', ev.data);
                     if (ev.data === 'simpson-finished') {
                         console.log('Starting typewriter sequence...');
-                        // 隱藏辛普森動畫
+                        
+                        // 視頻已經完全播放到純黑屏（雜訊完全進入），直接切換
+                        // 不需要淡出，因為已經是完全黑屏狀態
                         setWaitingStart(false);
                         gsap.set("#simpson-overlay", { display: 'none', opacity: 0 });
                         gsap.set("#canvas-container", { display: 'none', opacity: 0 });
@@ -1343,10 +1431,112 @@
             return (
                 <div className="relative">
                     
-                    {/* Simpsons Intro Overlay */}
+                    {/* Video Intro Overlay */}
                     {waitingStart && (
-                        <div id="simpson-overlay" className="fixed inset-0 z-[150] flex items-center justify-center bg-black">
-                            <iframe id="simpson-iframe" src="辛普森動畫index.html" className="absolute inset-0 w-full h-full border-0"></iframe>
+                        <div id="simpson-overlay" className="fixed inset-0 z-[150] flex items-center justify-center bg-black" style={{ 
+                            position: 'fixed',
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            width: '100%',
+                            height: '100%',
+                            overflow: 'hidden'
+                        }}>
+                            <video 
+                                ref={videoRef}
+                                id="intro-video"
+                                src="外星人看電視的動畫影片.mp4"
+                                className="absolute inset-0 w-full h-full object-cover"
+                                muted
+                                playsInline
+                                preload="auto"
+                                style={{
+                                    position: 'absolute',
+                                    top: 0,
+                                    left: 0,
+                                    width: '100%',
+                                    height: '100%',
+                                    objectFit: 'cover',
+                                    transform: `scale(${videoScale})`,
+                                    transformOrigin: 'center center',
+                                    zIndex: 10
+                                }}
+                                onEnded={() => {
+                                    // 如果還沒觸發切換（保險措施），在視頻結束時切換
+                                    if (!window.videoSwitchTriggered) {
+                                        console.log('Video ended, noise fully entered, switching immediately...');
+                                        // 確保視頻已經完全放大到3倍，完全進入雜訊
+                                        setVideoScale(3);
+                                        // 一完全進入雜訊時瞬間切換，不等待
+                                        console.log('Noise fully entered, triggering simpson-finished');
+                                        window.postMessage('simpson-finished', '*');
+                                        window.videoSwitchTriggered = true;
+                                    }
+                                }}
+                            ></video>
+                            
+                            {/* UI Overlay - 保留按钮和文字 */}
+                            <div className="ui-overlay w-screen h-screen absolute inset-0 z-20">
+                                <AnimatePresence>
+                                    {!showTypewriter && (
+                                        <motion.div 
+                                            exit={{ opacity: 0 }}
+                                            className="absolute inset-0 flex flex-col justify-between pt-20 pb-6 md:p-8 pointer-events-none"
+                                        >
+                                            <div className="flex justify-between items-start pointer-events-auto pl-4 md:pl-0 pr-2 md:pr-0">
+                                                <div className="relative inline-block max-w-[90%] md:max-w-none">
+                                                    <div className="text-5xl md:text-6xl font-black italic text-[#FFD90F]" style={{
+                                                        WebkitTextStroke: '3px #5E3023',
+                                                        textShadow: '4px 4px 0px #5E3023, 8px 8px 0px rgba(0,0,0,0.3)',
+                                                        transform: 'rotate(-2deg)',
+                                                        letterSpacing: '0.1em',
+                                                        lineHeight: '1.1'
+                                                    }}>
+                                                        <div>PORTFOLIO</div>
+                                                        <div>ENTRANCE</div>
+                                                    </div>
+                                                    <div className="absolute bottom-0 right-0 text-[13px] md:text-[14px] font-black italic uppercase whitespace-nowrap" style={{
+                                                        transform: 'translateY(calc(100% + 8px))',
+                                                        letterSpacing: '0.2em',
+                                                        color: '#5E3023',
+                                                        textShadow: '1px 1px 2px rgba(94, 48, 35, 0.8), 2px 2px 4px rgba(0,0,0,0.4)',
+                                                        fontWeight: 900,
+                                                        WebkitFontSmoothing: 'antialiased',
+                                                        MozOsxFontSmoothing: 'grayscale',
+                                                        textRendering: 'optimizeLegibility'
+                                                    }}>
+                                                        owen design
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="flex flex-col items-center">
+                                                <button 
+                                                    onClick={(e) => {
+                                                        e.preventDefault();
+                                                        e.stopPropagation();
+                                                        console.log('Button clicked! Starting video...');
+                                                        if (videoRef.current) {
+                                                            // 重置切換標誌
+                                                            window.videoSwitchTriggered = false;
+                                                            setVideoPlaying(true);
+                                                            videoRef.current.play().catch(err => {
+                                                                console.error('Video play failed:', err);
+                                                            });
+                                                        }
+                                                    }}
+                                                    className="interactive px-8 md:px-10 py-4 md:py-5 bg-[#FFD90F] text-[#5E3023] font-black rounded-full shadow-[0_8px_0_#5E3023] hover:translate-y-1 hover:shadow-[0_4px_0_#5E3023] transition-all uppercase tracking-widest text-sm md:text-base cursor-pointer z-50"
+                                                    style={{ pointerEvents: 'auto', display: videoPlaying ? 'none' : 'block' }}
+                                                >
+                                                    ready to start
+                                                </button>
+                                                <p className="mt-6 md:mt-8 text-[12px] md:text-[10px] font-bold text-zinc-600 tracking-[0.5em] uppercase" style={{ display: videoPlaying ? 'none' : 'block' }}>Begin Your Journey</p>
+                                            </div>
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+                            </div>
                         </div>
                     )}
 
