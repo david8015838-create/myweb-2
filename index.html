@@ -135,6 +135,39 @@
             overflow: auto;
             position: relative;
         }
+
+        /* 按鈕閃過動畫 */
+        @keyframes shimmer {
+            0% {
+                transform: translateX(-100%);
+            }
+            50% {
+                transform: translateX(100%);
+            }
+            100% {
+                transform: translateX(100%);
+            }
+        }
+
+        @keyframes button-glow {
+            0%, 100% {
+                box-shadow: 0 0 20px rgba(255, 255, 255, 0.1);
+            }
+            50% {
+                box-shadow: 0 0 30px rgba(255, 255, 255, 0.2);
+            }
+        }
+
+        @keyframes breathe {
+            0%, 100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+            50% {
+                transform: scale(1.02);
+                opacity: 0.95;
+            }
+        }
     </style>
 </head>
 <body>
@@ -158,6 +191,13 @@
             const [activeProjectInfo, setActiveProjectInfo] = useState(null); // 顯示項目功能介紹
             const [activeExpModal, setActiveExpModal] = useState(null);
             const [activeCertModal, setActiveCertModal] = useState(null);
+            const [currentCardIndex, setCurrentCardIndex] = useState(0);
+            const [isCardDragging, setIsCardDragging] = useState(false);
+            const [cardDragOffset, setCardDragOffset] = useState(0);
+            const [isCardTransitioning, setIsCardTransitioning] = useState(false);
+            const cardCarouselRef = useRef(null);
+            const wheelThrottleRef = useRef(false);
+            const wheelDeltaRef = useRef(0);
             const [iframeScale, setIframeScale] = useState(0.85);
             const [journeyDescription, setJourneyDescription] = useState('');
             const journeyDescriptionRef = useRef(null);
@@ -166,6 +206,25 @@
             const [videoPlaying, setVideoPlaying] = useState(false);
             const [videoScale, setVideoScale] = useState(1); // 用於動態縮放視頻
             const zoomAnimationRef = useRef(null); // 用於儲存 GSAP 動畫引用
+            const [sliderPosition, setSliderPosition] = useState(0); // 滑塊位置 (0-100)
+            const [isDragging, setIsDragging] = useState(false);
+            const [mouseX, setMouseX] = useState(0); // 滑動條內鼠標X位置 (0-100)
+            const [isHovering, setIsHovering] = useState(false); // 是否懸停在滑動條上
+            const [hoverSliderPosition, setHoverSliderPosition] = useState(0); // 懸停時滑塊位置
+            const [navScrolled, setNavScrolled] = useState(false); // 導航欄是否滾動
+            const sliderRef = useRef(null);
+            const sliderTrackRef = useRef(null);
+            
+            // 監聽滾動，改變導航欄樣式
+            useEffect(() => {
+                const handleScroll = () => {
+                    const scrolled = window.scrollY > 50;
+                    setNavScrolled(scrolled);
+                };
+                
+                window.addEventListener('scroll', handleScroll);
+                return () => window.removeEventListener('scroll', handleScroll);
+            }, []);
             
             // 確保視頻在頁面加載時顯示第一幀
             useEffect(() => {
@@ -225,15 +284,15 @@
                             // 優化：讓 GSAP 直接操作 DOM，移除 onUpdate 中的 state 更新以提升性能
                             // 使用 force3D 和 scaleX/scaleY 以獲得更好的性能
                             zoomAnimationRef.current = gsap.to(videoElement, {
-                                scale: 3,
-                                scaleX: 3,
-                                scaleY: 3,
+                                scale: 12, // 放大到 12 倍，效果更大
+                                scaleX: 12,
+                                scaleY: 12,
                                 duration: remainingTime * 0.5, // 縮短到50%的時間，大幅加快放大速度
                                 ease: "power4.in", // 使用最快的加速曲線，讓放大更迅速
                                 force3D: true, // 強制使用 3D 加速
                                 // 移除 onUpdate 避免頻繁的 state 更新導致的重渲染
                                 onComplete: () => {
-                                    setVideoScale(3); // 只在完成時更新一次
+                                    setVideoScale(12); // 只在完成時更新一次
                                 }
                             });
                         }
@@ -244,7 +303,7 @@
                         window.videoSwitchTriggered = true;
                         console.log('Video progress 55%, switching early to typewriter...');
                         // 確保視頻已經完全放大
-                        setVideoScale(3);
+                        setVideoScale(12);
                         // 提前觸發切換到打字機效果
                         window.postMessage('simpson-finished', '*');
                     }
@@ -260,6 +319,134 @@
                     }
                 };
             }, [videoPlaying]);
+            
+            // 滑動條事件監聽
+            useEffect(() => {
+                if (!isDragging || !sliderTrackRef.current) return;
+
+                const handleMouseMove = (e) => {
+                    const track = sliderTrackRef.current;
+                    if (!track) return;
+                    
+                    const rect = track.getBoundingClientRect();
+                    const trackWidth = rect.width;
+                    const sliderWidth = 56; // w-14 = 3.5rem = 56px
+                    const padding = 4; // left padding
+                    const maxLeft = trackWidth - sliderWidth - padding;
+                    
+                    // 計算滑塊位置 - 讓滑塊中心對齊鼠標
+                    let newLeft = e.clientX - rect.left - sliderWidth / 2;
+                    newLeft = Math.max(padding, Math.min(newLeft, maxLeft));
+                    
+                    // 直接更新滑塊位置（像素值），用於實時跟隨
+                    if (sliderRef.current) {
+                        sliderRef.current.style.left = `${newLeft}px`;
+                        sliderRef.current.style.transition = 'none';
+                    }
+                    
+                    // 計算百分比用於進度條和觸發邏輯
+                    const percentage = ((newLeft - padding) / (maxLeft - padding)) * 100;
+                    setSliderPosition(percentage);
+                    
+                    // 計算鼠標在滑動條內的相對位置 (0-100)
+                    const mouseRelativeX = e.clientX - rect.left;
+                    const mousePercentage = Math.max(0, Math.min(100, (mouseRelativeX / trackWidth) * 100));
+                    setMouseX(mousePercentage);
+                    
+                    // 當滑動超過80%時，觸發打開Project Matrix
+                    if (percentage >= 80) {
+                        setActiveProjectModal(true);
+                        setIsDragging(false);
+                        setTimeout(() => {
+                            setSliderPosition(0);
+                            setMouseX(0);
+                            if (sliderRef.current) {
+                                sliderRef.current.style.left = '4px';
+                                sliderRef.current.style.transition = 'all 0.3s ease-out';
+                            }
+                        }, 300); // 延遲重置位置
+                    }
+                };
+
+                const handleMouseUp = () => {
+                    setIsDragging(false);
+                    // 如果沒有滑到80%，則回彈到起始位置
+                    if (sliderPosition < 80) {
+                        setSliderPosition(0);
+                        setMouseX(0);
+                        if (sliderRef.current) {
+                            sliderRef.current.style.left = '4px';
+                            sliderRef.current.style.transition = 'all 0.3s ease-out';
+                        }
+                    }
+                };
+
+                const handleTouchMove = (e) => {
+                    e.preventDefault();
+                    const track = sliderTrackRef.current;
+                    if (!track) return;
+                    
+                    const rect = track.getBoundingClientRect();
+                    const trackWidth = rect.width;
+                    const sliderWidth = 56;
+                    const padding = 4;
+                    const maxLeft = trackWidth - sliderWidth - padding;
+                    
+                    let newLeft = e.touches[0].clientX - rect.left - sliderWidth / 2;
+                    newLeft = Math.max(padding, Math.min(newLeft, maxLeft));
+                    
+                    // 直接更新滑塊位置（像素值），用於實時跟隨
+                    if (sliderRef.current) {
+                        sliderRef.current.style.left = `${newLeft}px`;
+                        sliderRef.current.style.transition = 'none';
+                    }
+                    
+                    const percentage = ((newLeft - padding) / (maxLeft - padding)) * 100;
+                    setSliderPosition(percentage);
+                    
+                    // 計算觸摸在滑動條內的相對位置
+                    const touchRelativeX = e.touches[0].clientX - rect.left;
+                    const touchPercentage = Math.max(0, Math.min(100, (touchRelativeX / trackWidth) * 100));
+                    setMouseX(touchPercentage);
+                    
+                    if (percentage >= 80) {
+                        setActiveProjectModal(true);
+                        setIsDragging(false);
+                        setTimeout(() => {
+                            setSliderPosition(0);
+                            setMouseX(0);
+                            if (sliderRef.current) {
+                                sliderRef.current.style.left = '4px';
+                                sliderRef.current.style.transition = 'all 0.3s ease-out';
+                            }
+                        }, 300);
+                    }
+                };
+
+                const handleTouchEnd = () => {
+                    setIsDragging(false);
+                    if (sliderPosition < 80) {
+                        setSliderPosition(0);
+                        setMouseX(0);
+                        if (sliderRef.current) {
+                            sliderRef.current.style.left = '4px';
+                            sliderRef.current.style.transition = 'all 0.3s ease-out';
+                        }
+                    }
+                };
+
+                window.addEventListener('mousemove', handleMouseMove);
+                window.addEventListener('mouseup', handleMouseUp);
+                window.addEventListener('touchmove', handleTouchMove, { passive: false });
+                window.addEventListener('touchend', handleTouchEnd);
+
+                return () => {
+                    window.removeEventListener('mousemove', handleMouseMove);
+                    window.removeEventListener('mouseup', handleMouseUp);
+                    window.removeEventListener('touchmove', handleTouchMove);
+                    window.removeEventListener('touchend', handleTouchEnd);
+                };
+            }, [isDragging, sliderPosition]);
             
             // 經歷描述的打字機效果
             const journeyInView = useInView(journeyDescriptionRef, { once: false, amount: 0.1 });
@@ -1457,6 +1644,68 @@
                 ]}
             ];
 
+            // 合併所有證照為扁平數組
+            const allCertificates = certificateGroups.flatMap(group => 
+                group.items.map(cert => ({ ...cert, category: group.category }))
+            );
+
+            // 觸控板滑動支持（帶節流和敏感度控制）
+            useEffect(() => {
+                const carousel = cardCarouselRef.current;
+                if (!carousel) return;
+
+                const handleWheel = (e) => {
+                    if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return; // 只處理水平滾動
+                    
+                    e.preventDefault();
+                    
+                    // 累積deltaX
+                    wheelDeltaRef.current += Math.abs(e.deltaX);
+                    
+                    // 如果還在節流期，不處理
+                    if (wheelThrottleRef.current) return;
+                    
+                    // 如果累積值達到閾值150px
+                    if (wheelDeltaRef.current >= 150) {
+                        const direction = e.deltaX > 0 ? 1 : -1;
+                        
+                        if (direction > 0) {
+                            // 右滑（触控板向左）- 下一張
+                            setCurrentCardIndex((prev) => {
+                                if (prev === allCertificates.length - 1) return 0;
+                                return prev + 1;
+                            });
+                        } else {
+                            // 左滑（触控板向右）- 上一張
+                            setCurrentCardIndex((prev) => {
+                                if (prev === 0) return allCertificates.length - 1;
+                                return prev - 1;
+                            });
+                        }
+                        
+                        // 重置累積值並啟動節流
+                        wheelDeltaRef.current = 0;
+                        wheelThrottleRef.current = true;
+                        
+                        setTimeout(() => {
+                            wheelThrottleRef.current = false;
+                        }, 600);
+                    }
+                };
+
+                carousel.addEventListener('wheel', handleWheel, { passive: false });
+                return () => carousel.removeEventListener('wheel', handleWheel);
+            }, [allCertificates.length]);
+
+            // 監聽卡牌切換，在動畫期間顯示更多卡牌
+            useEffect(() => {
+                setIsCardTransitioning(true);
+                const timer = setTimeout(() => {
+                    setIsCardTransitioning(false);
+                }, 600); // 與動畫時長一致
+                return () => clearTimeout(timer);
+            }, [currentCardIndex]);
+
             const { scrollYProgress } = useScroll();
             const springProgress = useSpring(scrollYProgress, { stiffness: 100, damping: 30 });
 
@@ -1512,6 +1761,8 @@
                                         // 確保顯示第一幀
                                         video.currentTime = 0;
                                         video.style.display = 'block';
+                                        // 設置播放速度加速（1.5倍速）
+                                        video.playbackRate = 1.5;
                                     }
                                 }}
                                 onError={(e) => {
@@ -1530,11 +1781,11 @@
                                     // 如果還沒觸發切換（保險措施），在視頻結束時切換
                                     if (!window.videoSwitchTriggered) {
                                         console.log('Video ended, noise fully entered, switching immediately...');
-                                        // 確保視頻已經完全放大到3倍，完全進入雜訊
-                                        setVideoScale(3);
+                                        // 確保視頻已經完全放大到12倍，完全進入雜訊
+                                        setVideoScale(12);
                                         // 一完全進入雜訊時瞬間切換，不等待
                                         console.log('Noise fully entered, triggering simpson-finished');
-                                        window.postMessage('simpson-finished', '*');
+                                    window.postMessage('simpson-finished', '*');
                                         window.videoSwitchTriggered = true;
                                     }
                                 }}
@@ -1596,6 +1847,8 @@
                                                         if (videoRef.current) {
                                                             // 重置切換標誌
                                                             window.videoSwitchTriggered = false;
+                                                            // 設置播放速度加速（1.5倍速）
+                                                            videoRef.current.playbackRate = 1.5;
                                                             setVideoPlaying(true);
                                                             videoRef.current.play().catch(err => {
                                                                 console.error('Video play failed:', err);
@@ -1644,6 +1897,152 @@
                                     0%, 50% { opacity: 1; }
                                     51%, 100% { opacity: 0; }
                                 }
+                                @keyframes gradient-shift {
+                                    0%, 100% { background-position: 0% 50%; }
+                                    50% { background-position: 100% 50%; }
+                                }
+                                @keyframes slider-glow {
+                                    0%, 100% { 
+                                        opacity: 0.3;
+                                        box-shadow: 0 0 20px rgba(59,130,246,0.2), 0 0 40px rgba(147,51,234,0.1);
+                                    }
+                                    50% { 
+                                        opacity: 0.6;
+                                        box-shadow: 0 0 30px rgba(59,130,246,0.4), 0 0 60px rgba(147,51,234,0.2), 0 0 80px rgba(6,182,212,0.15);
+                                    }
+                                }
+                                @keyframes slider-border-glow {
+                                    0%, 100% { 
+                                        opacity: 0.2;
+                                    }
+                                    50% { 
+                                        opacity: 0.5;
+                                    }
+                                }
+                                @keyframes slider-text-shimmer {
+                                    0%, 100% { 
+                                        opacity: 0.7;
+                                        text-shadow: 0 0 10px rgba(255,255,255,0.3);
+                                    }
+                                    50% { 
+                                        opacity: 1;
+                                        text-shadow: 0 0 20px rgba(255,255,255,0.5), 0 0 30px rgba(59,130,246,0.3);
+                                    }
+                                }
+                                @keyframes slider-bg-flow {
+                                    0% { 
+                                        background-position: 0% 50%;
+                                    }
+                                    50% {
+                                        background-position: 100% 50%;
+                                    }
+                                    100% { 
+                                        background-position: 0% 50%;
+                                    }
+                                }
+                                @keyframes slider-button-pulse {
+                                    0%, 100% { 
+                                        box-shadow: 0 2px 8px 0 rgba(0,0,0,0.2), inset 0 1px 0 0 rgba(255,255,255,0.3), inset 0 -1px 0 0 rgba(0,0,0,0.1);
+                                    }
+                                    50% { 
+                                        box-shadow: 0 2px 12px 0 rgba(59,130,246,0.3), 0 0 20px rgba(147,51,234,0.2), inset 0 1px 0 0 rgba(255,255,255,0.4), inset 0 -1px 0 0 rgba(0,0,0,0.1);
+                                    }
+                                }
+                                @keyframes metallic-shine {
+                                    0% { 
+                                        background-position: -200% center;
+                                    }
+                                    100% { 
+                                        background-position: 200% center;
+                                    }
+                                }
+                                @keyframes metallic-glow {
+                                    0%, 100% { 
+                                        opacity: 0.4;
+                                        filter: brightness(1);
+                                    }
+                                    50% { 
+                                        opacity: 0.7;
+                                        filter: brightness(1.2);
+                                    }
+                                }
+                                @keyframes metallic-twinkle {
+                                    0%, 100% { 
+                                        filter: contrast(1.3) brightness(1.15);
+                                    }
+                                    25% { 
+                                        filter: contrast(1.4) brightness(1.25);
+                                    }
+                                    50% { 
+                                        filter: contrast(1.35) brightness(1.2);
+                                    }
+                                    75% { 
+                                        filter: contrast(1.38) brightness(1.22);
+                                    }
+                                }
+                                @keyframes metallic-shimmer {
+                                    0% { 
+                                        background-position: -100% 50%;
+                                    }
+                                    50% {
+                                        background-position: 200% 50%;
+                                    }
+                                    100% { 
+                                        background-position: -100% 50%;
+                                    }
+                                }
+                                @keyframes metallic-sweep {
+                                    0% { 
+                                        background-position: -100% 50%;
+                                    }
+                                    100% {
+                                        background-position: 200% 50%;
+                                    }
+                                }
+                                @keyframes dot-sparkle {
+                                    0%, 100% { 
+                                        opacity: 1;
+                                        filter: contrast(1.5) brightness(1.3);
+                                        textShadow: '0 0 10px rgba(255,255,255,0.8), 0 0 20px rgba(255,255,255,0.6), 0 0 30px rgba(255,255,255,0.4)';
+                                    }
+                                    25% { 
+                                        opacity: 0.7;
+                                        filter: contrast(1.8) brightness(1.6);
+                                        textShadow: '0 0 15px rgba(255,255,255,1), 0 0 30px rgba(255,255,255,0.8), 0 0 45px rgba(255,255,255,0.6)';
+                                    }
+                                    50% { 
+                                        opacity: 1;
+                                        filter: contrast(2) brightness(1.8);
+                                        textShadow: '0 0 20px rgba(255,255,255,1), 0 0 40px rgba(255,255,255,0.9), 0 0 60px rgba(255,255,255,0.7)';
+                                    }
+                                    75% { 
+                                        opacity: 0.7;
+                                        filter: contrast(1.8) brightness(1.6);
+                                        textShadow: '0 0 15px rgba(255,255,255,1), 0 0 30px rgba(255,255,255,0.8), 0 0 45px rgba(255,255,255,0.6)';
+                                    }
+                                }
+                                @keyframes title-sway {
+                                    0%, 100% { 
+                                        transform: rotate(0deg) !important;
+                                    }
+                                    25% { 
+                                        transform: rotate(-3deg) !important;
+                                    }
+                                    75% { 
+                                        transform: rotate(3deg) !important;
+                                    }
+                                }
+                                .title-sway-animation {
+                                    animation: title-sway 1.5s ease-in-out infinite;
+                                    transform-origin: center center;
+                                }
+                                .group:hover .title-sway-animation {
+                                    animation: none;
+                                }
+                                .group:hover .animate-gradient {
+                                    background-size: 200% 200%;
+                                    animation: gradient-shift 3s ease infinite;
+                                }
                             `}</style>
                         </div>
                     )}
@@ -1668,20 +2067,63 @@
                             <div className="absolute bottom-[25%] right-[20%] w-2 h-2 bg-white/8 rounded-full" />
                         </div>
 
-                        <motion.div className="fixed top-0 left-0 right-0 h-0.5 bg-white z-[60] origin-left" style={{ scaleX: springProgress }} />
-
-                        <nav className="fixed top-0 w-full z-50">
-                            <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-8 h-[5rem] md:h-20 flex items-end justify-between border-b border-white/5 backdrop-blur-md pb-3 md:pb-0">
-                                <div className="flex items-center gap-1.5 sm:gap-2 md:gap-3 font-medium tracking-tighter text-sm sm:text-base md:text-lg uppercase flex-shrink-0">
+                        <nav className="fixed top-0 w-full z-50 group">
+                            <div className="relative max-w-7xl mx-auto px-3 sm:px-4 md:px-8 h-[5rem] md:h-20 flex items-end justify-between border-b backdrop-blur-xl pb-3 md:pb-0 overflow-hidden transition-all duration-500"
+                                style={{
+                                    background: navScrolled 
+                                        ? 'linear-gradient(to bottom, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.6) 50%, rgba(0,0,0,0.4) 100%)'
+                                        : 'linear-gradient(to bottom, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0.4) 50%, rgba(0,0,0,0.2) 100%)',
+                                    borderColor: navScrolled ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.05)',
+                                    boxShadow: navScrolled 
+                                        ? '0 8px 32px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.15)'
+                                        : '0 4px 20px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.1)'
+                                }}
+                            >
+                                {/* 背景光效 - 持續流動 */}
+                                <div className="absolute inset-0 opacity-30" style={{
+                                    background: 'linear-gradient(90deg, rgba(59,130,246,0.1) 0%, rgba(147,51,234,0.1) 25%, rgba(6,182,212,0.1) 50%, rgba(147,51,234,0.1) 75%, rgba(59,130,246,0.1) 100%)',
+                                    backgroundSize: '200% 100%',
+                                    animation: 'slider-bg-flow 6s ease-in-out infinite'
+                                }}></div>
+                                
+                                {/* 頂部高光線 */}
+                                <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/30 to-transparent"></div>
+                                
+                                {/* 底部邊框光效 */}
+                                <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent opacity-50 group-hover:opacity-100 transition-opacity duration-500"></div>
+                                
+                                {/* 裝飾性網格背景 */}
+                                <div className="absolute inset-0 opacity-[0.02]" style={{
+                                    backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)',
+                                    backgroundSize: '20px 20px'
+                                }}></div>
+                                
+                                <div className="relative z-10 flex items-center gap-1.5 sm:gap-2 md:gap-3 font-medium tracking-tighter text-sm sm:text-base md:text-lg uppercase flex-shrink-0">
+                                    <div className="relative">
                                     <div className="w-1.5 h-1.5 sm:w-1.5 sm:h-1.5 bg-white rounded-full animate-pulse" />
-                                    <span className="hidden sm:inline">Studio Portfolio</span>
-                                    <span className="sm:hidden text-xs">Portfolio</span>
+                                        <div className="absolute inset-0 w-1.5 h-1.5 bg-blue-400 rounded-full animate-ping opacity-75"></div>
                                 </div>
-                                <div className="flex items-center gap-2 sm:gap-3 md:gap-8 text-[9px] sm:text-[9px] md:text-[10px] tracking-[0.15em] sm:tracking-[0.2em] font-medium uppercase text-zinc-500 flex-shrink-0">
-                                    <a href="#projects" className="md:inline whitespace-nowrap">Projects</a>
-                                    <a href="#journey" className="md:inline whitespace-nowrap">Journey</a>
-                                    <a href="#certs" className="md:inline whitespace-nowrap">Certs</a>
-                                    <a href="mailto:david8015838@gmail.com" className="text-white border border-white/20 px-3 sm:px-4 md:px-6 py-1 sm:py-1.5 md:py-2 rounded-full bg-white/5 text-[9px] sm:text-[9px] md:text-[10px] whitespace-nowrap">Connect</a>
+                                    <span className="hidden sm:inline bg-gradient-to-r from-white via-white to-zinc-400 bg-clip-text text-transparent group-hover:from-blue-300 group-hover:via-purple-300 group-hover:to-cyan-300 transition-all duration-500">Studio Portfolio</span>
+                                    <span className="sm:hidden text-xs bg-gradient-to-r from-white via-white to-zinc-400 bg-clip-text text-transparent">Portfolio</span>
+                                </div>
+                                <div className="relative z-10 flex items-center gap-2 sm:gap-3 md:gap-8 text-[9px] sm:text-[9px] md:text-[10px] tracking-[0.15em] sm:tracking-[0.2em] font-medium uppercase text-zinc-500 flex-shrink-0">
+                                    <a href="#projects" className="md:inline whitespace-nowrap hover:text-white transition-all duration-300 relative group/link">
+                                        <span className="relative z-10">Projects</span>
+                                        <span className="absolute bottom-0 left-0 w-0 h-px bg-gradient-to-r from-blue-400 to-purple-400 group-hover/link:w-full transition-all duration-300"></span>
+                                    </a>
+                                    <a href="#journey" className="md:inline whitespace-nowrap hover:text-white transition-all duration-300 relative group/link">
+                                        <span className="relative z-10">Journey</span>
+                                        <span className="absolute bottom-0 left-0 w-0 h-px bg-gradient-to-r from-blue-400 to-purple-400 group-hover/link:w-full transition-all duration-300"></span>
+                                    </a>
+                                    <a href="#certs" className="md:inline whitespace-nowrap hover:text-white transition-all duration-300 relative group/link">
+                                        <span className="relative z-10">Certs</span>
+                                        <span className="absolute bottom-0 left-0 w-0 h-px bg-gradient-to-r from-blue-400 to-purple-400 group-hover/link:w-full transition-all duration-300"></span>
+                                    </a>
+                                    <a href="mailto:david8015838@gmail.com" className="text-white border border-white/20 px-3 sm:px-4 md:px-6 py-1 sm:py-1.5 md:py-2 rounded-full bg-white/5 text-[9px] sm:text-[9px] md:text-[10px] whitespace-nowrap hover:bg-white/10 hover:border-white/30 hover:shadow-[0_0_20px_rgba(59,130,246,0.3)] transition-all duration-300 relative overflow-hidden group/connect">
+                                        <span className="relative z-10">Connect</span>
+                                        <div className="absolute inset-0 bg-gradient-to-r from-blue-500/20 via-purple-500/20 to-cyan-500/20 opacity-0 group-hover/connect:opacity-100 transition-opacity duration-300"></div>
+                                        <div className="absolute -inset-1 bg-gradient-to-r from-blue-500/30 via-purple-500/30 to-cyan-500/30 rounded-full opacity-0 group-hover/connect:opacity-100 blur-md transition-opacity duration-300 -z-10"></div>
+                                    </a>
                                 </div>
                             </div>
                         </nav>
@@ -1698,23 +2140,25 @@
                                     filter: 'blur(40px)'
                                 }}></div>
                                 
-                                {/* 照片 - 融入主題設計 */}
-                                <div className="absolute opacity-70 hover:opacity-85 transition-opacity duration-300 z-0 flex flex-col items-center md:w-[70%] w-[50%] md:h-[50%] h-[35%] md:top-[4rem] top-[5rem] md:right-[-8%] right-[-5%] pointer-events-none">
+                                {/* 照片 - 中間清晰，慢慢融入背景 */}
+                                <div className="absolute opacity-100 hover:opacity-100 transition-opacity duration-300 z-0 flex flex-col items-center md:w-[70%] w-[50%] md:h-[50%] h-[35%] md:top-[4rem] top-[5rem] md:right-[-8%] right-[-5%] pointer-events-none">
                                     <div className="relative w-full h-full mb-2" style={{
-                                        maskImage: 'radial-gradient(ellipse 90% 90% at 50% 50%, black 40%, rgba(0,0,0,0.8) 50%, rgba(0,0,0,0.4) 60%, rgba(0,0,0,0.2) 70%, transparent 85%)',
-                                        WebkitMaskImage: 'radial-gradient(ellipse 90% 90% at 50% 50%, black 40%, rgba(0,0,0,0.8) 50%, rgba(0,0,0,0.4) 60%, rgba(0,0,0,0.2) 70%, transparent 85%)',
+                                        maskImage: 'radial-gradient(ellipse 120% 120% at 50% 50%, black 30%, rgba(0,0,0,0.85) 35%, rgba(0,0,0,0.7) 40%, rgba(0,0,0,0.5) 45%, rgba(0,0,0,0.3) 50%, rgba(0,0,0,0.15) 53%, rgba(0,0,0,0.06) 56%, rgba(0,0,0,0.02) 58%, transparent 60%)',
+                                        WebkitMaskImage: 'radial-gradient(ellipse 120% 120% at 50% 50%, black 30%, rgba(0,0,0,0.85) 35%, rgba(0,0,0,0.7) 40%, rgba(0,0,0,0.5) 45%, rgba(0,0,0,0.3) 50%, rgba(0,0,0,0.15) 53%, rgba(0,0,0,0.06) 56%, rgba(0,0,0,0.02) 58%, transparent 60%)',
                                         maskSize: '100% 100%',
                                         WebkitMaskSize: '100% 100%',
                                         maskRepeat: 'no-repeat',
                                         WebkitMaskRepeat: 'no-repeat'
                                     }}>
-                                        <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent blur-xl"></div>
                                         <img 
                                             src={IMAGES.profilePhoto} 
                                             alt="Profile" 
-                                            className="relative w-full h-full object-contain shadow-[0_8px_32px_rgba(0,0,0,0.3)] grayscale hover:grayscale-0 transition-all duration-500" 
+                                            className="relative w-full h-full object-contain grayscale hover:grayscale-0 transition-all duration-500" 
                                             style={{
-                                                filter: 'brightness(1.0) contrast(1.2)'
+                                                filter: 'brightness(0.9) contrast(1.1)',
+                                                mixBlendMode: 'normal',
+                                                WebkitFilter: 'brightness(0.9) contrast(1.1)',
+                                                WebkitMixBlendMode: 'normal'
                                             }}
                                         />
                                     </div>
@@ -1735,14 +2179,49 @@
                                 </div>
                                 
                                 <div className="relative z-10 md:mt-0 mt-8">
-                                    <p className="text-zinc-500 font-mono mb-4 md:mb-8 tracking-[0.4em] uppercase whitespace-nowrap md:max-w-[10vw] md:w-fit" style={{ 
+                                    <p className="text-zinc-500 font-mono mb-4 md:mb-8 tracking-[0.4em] uppercase whitespace-nowrap md:max-w-[5vw] md:w-fit" style={{ 
                                         fontSize: 'clamp(8px, 1vw, 12px)',
-                                        width: '10vw',
-                                        maxWidth: '10vw'
+                                        width: '5vw',
+                                        maxWidth: '5vw'
                                     }}>Vibe Coder / Forward-Thinking</p>
-                                <h1 className="text-[10vw] md:text-[8vw] font-light tracking-tighter leading-[0.8] mb-4 md:mb-6">
-                                        <span className="inline-block">MAKING</span> <br />
-                                        <span className="font-serif italic font-normal text-zinc-500 text-[11vw] md:text-[9vw] inline-block" style={{ marginLeft: '0.28em', marginTop: '-0.08em' }}>Impact.</span>
+                                <h1 className="text-[10vw] md:text-[8vw] font-light tracking-tighter leading-[0.8] mb-4 md:mb-6 relative">
+                                        <span className="inline-block relative">
+                                            {/* 文字 - 銀白色金屬質感，微微閃動，從M掃到t */}
+                                            <span className="relative z-10" style={{
+                                                background: 'linear-gradient(90deg, #808080 0%, #a0a0a0 10%, #ffffff 20%, #e8e8e8 30%, #ffffff 40%, #d0d0d0 50%, #ffffff 60%, #c0c0c0 70%, #ffffff 80%, #909090 90%, #808080 100%)',
+                                                backgroundSize: '300% 100%',
+                                                WebkitBackgroundClip: 'text',
+                                                WebkitTextFillColor: 'transparent',
+                                                backgroundClip: 'text',
+                                                animation: 'metallic-sweep 2s linear infinite, metallic-twinkle 1.5s ease-in-out infinite',
+                                                filter: 'contrast(1.4) brightness(1.2)'
+                                            }}>MAKING</span>
+                                        </span> <br />
+                                        <span className="font-serif italic font-normal text-zinc-500 text-[11vw] md:text-[9vw] inline-block relative" style={{ marginLeft: '0.28em', marginTop: '-0.08em' }}>
+                                            {/* 文字 - 銀白色金屬質感，微微閃動 */}
+                                            <span className="relative z-10" style={{
+                                                background: 'linear-gradient(135deg, #c0c0c0 0%, #e8e8e8 15%, #f5f5f5 30%, #ffffff 45%, #e8e8e8 60%, #d4d4d4 75%, #e8e8e8 90%, #c0c0c0 100%)',
+                                                backgroundSize: '300% 300%',
+                                                WebkitBackgroundClip: 'text',
+                                                WebkitTextFillColor: 'transparent',
+                                                backgroundClip: 'text',
+                                                animation: 'metallic-shimmer 4.5s ease-in-out infinite, metallic-twinkle 3.5s ease-in-out infinite'
+                                            }}>Impact</span>
+                                            {/* 會閃光的句號 */}
+                                            <span className="inline-block relative" style={{
+                                                animation: 'dot-sparkle 1.5s ease-in-out infinite'
+                                            }}>
+                                                <span className="relative z-10" style={{
+                                                    background: 'linear-gradient(135deg, #ffffff 0%, #f5f5f5 25%, #ffffff 50%, #e8e8e8 75%, #ffffff 100%)',
+                                                    backgroundSize: '200% 200%',
+                                                    WebkitBackgroundClip: 'text',
+                                                    WebkitTextFillColor: 'transparent',
+                                                    backgroundClip: 'text',
+                                                    filter: 'contrast(1.5) brightness(1.3)',
+                                                    textShadow: '0 0 10px rgba(255,255,255,0.8), 0 0 20px rgba(255,255,255,0.6), 0 0 30px rgba(255,255,255,0.4)'
+                                                }}>.</span>
+                                            </span>
+                                        </span>
                                 </h1>
                                     <div className="flex items-center gap-4 md:gap-8">
                                         <div className="h-px w-12 md:w-20 bg-zinc-700" />
@@ -1763,68 +2242,24 @@
                                     backgroundSize: '30px 30px',
                                     backgroundPosition: '0 0, 0 0'
                                 }}></div>
-                                <div 
-                                    onClick={() => setActiveProjectModal(true)} 
-                                    className="group relative cursor-pointer border border-white/10 rounded-[2.5rem] overflow-hidden bg-gradient-to-br from-white/[0.02] to-white/[0.005] hover:from-white/[0.05] hover:to-white/[0.02] transition-all duration-700 mt-0 md:mt-8 backdrop-blur-sm shadow-[0_8px_32px_0_rgba(0,0,0,0.3)] hover:shadow-[0_12px_48px_0_rgba(255,255,255,0.1)]"
-                                    style={{
-                                        position: 'relative',
-                                        isolation: 'isolate'
-                                    }}
-                                >
-                                    {/* 背景光暈效果 */}
-                                    <div className="absolute inset-0 bg-gradient-to-r from-blue-500/0 via-purple-500/5 to-cyan-500/0 opacity-0 group-hover:opacity-100 transition-opacity duration-700"></div>
-                                    
-                                    {/* 裝飾性網格背景 - 更明顯 */}
-                                    <div className="absolute inset-0 opacity-[0.05] group-hover:opacity-[0.1] transition-opacity duration-700" style={{
-                                        backgroundImage: 'linear-gradient(rgba(255,255,255,0.15) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.15) 1px, transparent 1px)',
-                                        backgroundSize: '30px 30px',
-                                        backgroundPosition: '0 0, 0 0'
-                                    }}></div>
-                                    
-                                    {/* 下方格子效果 - 延伸到卡片外 */}
-                                    <div className="absolute -bottom-8 left-0 right-0 h-24 opacity-[0.03] group-hover:opacity-[0.06] transition-opacity duration-700 pointer-events-none" style={{
-                                        backgroundImage: 'linear-gradient(rgba(255,255,255,0.15) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.15) 1px, transparent 1px)',
-                                        backgroundSize: '30px 30px',
-                                        backgroundPosition: '0 0, 0 0'
-                                    }}></div>
-                                    
-                                    {/* 邊框光效 */}
-                                    <div className="absolute inset-0 rounded-[2.5rem] border border-white/10 group-hover:border-white/20 transition-all duration-700"></div>
-                                    <div className="absolute -inset-[1px] rounded-[2.5rem] bg-gradient-to-r from-blue-500/0 via-purple-500/20 to-cyan-500/0 opacity-0 group-hover:opacity-100 blur-xl transition-opacity duration-700 -z-10"></div>
-                                    
-                                    <div className="py-32 px-12 flex flex-col items-center text-center relative z-10">
-                                        {/* 加號圖標 - 更精緻 */}
-                                        <div className="relative mb-10">
-                                            <div className="w-20 h-20 border-2 border-zinc-700/50 rounded-full flex items-center justify-center text-3xl font-extralight text-zinc-400 group-hover:text-white group-hover:border-white/40 transition-all duration-500 group-hover:scale-110 group-hover:rotate-90">
-                                                <span className="relative z-10">+</span>
-                                    </div>
-                                            {/* 加號周圍的光暈 */}
-                                            <div className="absolute inset-0 rounded-full bg-white/5 blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-                                        </div>
-                                        
-                                        {/* 標題 - 更突出 */}
-                                        <h2 className="text-6xl md:text-7xl font-light tracking-tighter mb-6 text-white group-hover:text-transparent group-hover:bg-clip-text group-hover:bg-gradient-to-r group-hover:from-white group-hover:via-zinc-300 group-hover:to-white transition-all duration-700">
-                                            Project Matrix
-                                        </h2>
-                                        
-                                        {/* 副標題 - 更精緻 */}
-                                        <div className="flex items-center gap-4 mb-2">
-                                            <div className="h-px w-12 bg-gradient-to-r from-transparent to-zinc-600 group-hover:to-zinc-400 transition-colors duration-500"></div>
-                                            <p className="text-zinc-400 text-[11px] uppercase tracking-[0.6em] font-medium group-hover:text-zinc-300 transition-colors duration-500">
-                                                Explore Artifacts
-                                            </p>
-                                            <div className="h-px w-12 bg-gradient-to-l from-transparent to-zinc-600 group-hover:to-zinc-400 transition-colors duration-500"></div>
-                                        </div>
-                                        
-                                        {/* 提示文字 */}
-                                        <p className="text-zinc-600 text-xs mt-4 opacity-0 group-hover:opacity-100 transition-opacity duration-500">
-                                            Click to discover
-                                        </p>
-                                    </div>
-                                    
-                                    {/* 角落裝飾 */}
-                                    <div className="absolute top-4 right-4 w-2 h-2 bg-zinc-700/30 rounded-full group-hover:bg-white/20 transition-colors duration-500"></div>
-                                    <div className="absolute bottom-4 left-4 w-1.5 h-1.5 bg-zinc-700/30 rounded-full group-hover:bg-white/20 transition-colors duration-500"></div>
+                                <div className="flex justify-center -mt-12 md:-mt-16">
+                                    <button
+                                        onClick={() => setActiveProjectModal(true)}
+                                        className="relative px-10 md:px-16 py-4 md:py-6 bg-gradient-to-r from-white/10 to-white/5 border border-white/20 rounded-full text-white font-medium text-base md:text-lg uppercase tracking-wider hover:from-white/20 hover:to-white/10 transition-all duration-500 hover:scale-105 hover:shadow-[0_8px_32px_0_rgba(255,255,255,0.1)] cursor-pointer overflow-hidden"
+                                        style={{
+                                            animation: 'button-glow 3s ease-in-out infinite, breathe 3s ease-in-out infinite'
+                                        }}
+                                    >
+                                        {/* 从左往右闪过的动画特效 */}
+                                        <span 
+                                            className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent"
+                                            style={{
+                                                transform: 'translateX(-100%)',
+                                                animation: 'shimmer 2.1s ease-in-out infinite'
+                                            }}
+                                        ></span>
+                                        <span className="relative z-10">Explore Project Matrix</span>
+                                    </button>
                                 </div>
                             </section>
 
@@ -1850,7 +2285,7 @@
                                             )}
                                         </p>
                                     </div>
-                                    <div className="lg:col-span-8 space-y-3 relative pl-8 md:pl-0">
+                                    <div className="lg:col-span-8 space-y-1 relative pl-8 md:pl-0">
                                         {/* 時間軸 - 垂直線（桌面版） */}
                                         <div className="absolute left-0 top-0 bottom-0 w-px bg-gradient-to-b from-transparent via-white/10 to-transparent hidden md:block" style={{
                                             left: '20px'
@@ -1861,8 +2296,10 @@
                                         
                                         {experiences.map((exp, index) => {
                                             const expRef = useRef(null);
+                                            const titleRef = useRef(null);
                                             const isInView = useInView(expRef, { once: false, amount: 0.2 });
                                             const isLast = index === experiences.length - 1;
+                                            
                                             return (
                                                 <motion.div
                                                     key={exp.id}
@@ -1889,45 +2326,56 @@
                                                         delay: index * 0.15,
                                                         ease: [0.25, 0.1, 0.25, 1]
                                                     }}
-                                                    className="group relative py-8 md:py-12 transition-all duration-500 md:pl-12"
+                                                    className="group relative py-4 md:py-6 transition-all duration-500 md:pl-12 cursor-pointer active:scale-[0.98]"
+                                                    onClick={() => setActiveExpModal(exp)}
+                                                    style={{
+                                                        transform: 'translateY(0)',
+                                                        transition: 'all 0.5s ease-out',
+                                                        WebkitTapHighlightColor: 'transparent'
+                                                    }}
+                                                    onMouseEnter={(e) => {
+                                                        if (window.matchMedia('(hover: hover)').matches) {
+                                                            e.currentTarget.style.transform = 'translateY(-4px) scale(1.01)';
+                                                        }
+                                                    }}
+                                                    onMouseLeave={(e) => {
+                                                        if (window.matchMedia('(hover: hover)').matches) {
+                                                            e.currentTarget.style.transform = 'translateY(0) scale(1)';
+                                                        }
+                                                    }}
+                                                    onTouchStart={(e) => {
+                                                        e.currentTarget.style.transform = 'translateY(-2px) scale(1.005)';
+                                                        e.currentTarget.style.opacity = '0.95';
+                                                    }}
+                                                    onTouchEnd={(e) => {
+                                                        setTimeout(() => {
+                                                            e.currentTarget.style.transform = 'translateY(0) scale(1)';
+                                                            e.currentTarget.style.opacity = '1';
+                                                        }, 150);
+                                                    }}
                                                 >
+                                                    {/* 背景光效 - 懸停/觸摸時顯示，審訊室燈效果（白灰灰） */}
+                                                    <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-zinc-400/0 to-zinc-500/0 opacity-0 group-hover:opacity-100 group-active:opacity-100 transition-opacity duration-500 rounded-lg" style={{
+                                                        background: 'radial-gradient(ellipse at center, rgba(255,255,255,0.08) 0%, rgba(161,161,170,0.05) 50%, transparent 70%)'
+                                                    }}></div>
+                                                    
+                                                    {/* 光暈效果 - 懸停/觸摸時顯示，審訊室燈效果（白灰灰） */}
+                                                    <div className="absolute -inset-2 bg-gradient-to-r from-white/0 via-zinc-400/0 to-zinc-500/0 opacity-0 group-hover:opacity-100 group-active:opacity-100 blur-xl transition-opacity duration-500 -z-10" style={{
+                                                        background: 'radial-gradient(ellipse at center, rgba(255,255,255,0.12) 0%, rgba(161,161,170,0.08) 50%, transparent 70%)'
+                                                    }}></div>
+                                                    
+                                                    {/* 頂部高光線 - 懸停/觸摸時顯示 */}
+                                                    <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent opacity-0 group-hover:opacity-100 group-active:opacity-100 transition-opacity duration-500"></div>
+                                                    
+                                                    {/* 底部高光線 - 懸停/觸摸時顯示 */}
+                                                    <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/15 to-transparent opacity-0 group-hover:opacity-100 group-active:opacity-100 transition-opacity duration-500"></div>
+                                                    
                                                     {/* 左側裝飾線（桌面版） */}
                                                     <div className="absolute left-0 top-0 bottom-0 w-px bg-gradient-to-b from-transparent via-white/5 to-transparent hidden md:block opacity-0 group-hover:opacity-100 transition-opacity duration-500" style={{
                                                         left: '20px',
                                                         transform: 'translateX(-50%)',
                                                         height: '100%'
                                                     }}></div>
-                                                    
-                                                    {/* 時間軸節點（桌面版） */}
-                                                    <div className="absolute left-0 top-1/2 -translate-y-1/2 hidden md:flex items-center justify-center" style={{
-                                                        left: '20px',
-                                                        width: '12px',
-                                                        height: '12px',
-                                                        transform: 'translate(-50%, -50%)'
-                                                    }}>
-                                                        {/* 外圈光暈 */}
-                                                        <div className="absolute inset-0 rounded-full bg-white/10 blur-md opacity-0 group-hover:opacity-100 transition-opacity duration-500" style={{
-                                                            width: '24px',
-                                                            height: '24px'
-                                                        }}></div>
-                                                        {/* 節點圓點 */}
-                                                        <div className="relative w-3 h-3 rounded-full bg-white/20 border-2 border-white/30 group-hover:bg-white/40 group-hover:border-white/50 transition-all duration-500 group-hover:scale-125 z-10"></div>
-                                                        {/* 內圈 */}
-                                                        <div className="absolute inset-0 rounded-full bg-white/5 group-hover:bg-white/10 transition-all duration-500" style={{
-                                                            width: '8px',
-                                                            height: '8px'
-                                                        }}></div>
-                                                    </div>
-                                                    
-                                                    {/* 時間軸節點（手機版） */}
-                                                    <div className="absolute left-0 top-6 flex items-center justify-center md:hidden" style={{
-                                                        left: '16px',
-                                                        width: '8px',
-                                                        height: '8px',
-                                                        transform: 'translate(-50%, 0)'
-                                                    }}>
-                                                        <div className="relative w-2 h-2 rounded-full bg-white/20 border border-white/30 group-hover:bg-white/40 group-hover:border-white/50 transition-all duration-500"></div>
-                                                    </div>
                                                     
                                                     {/* 內容區域 */}
                                                     <motion.div 
@@ -1936,10 +2384,10 @@
                                                         animate={isInView ? { opacity: 1 } : { opacity: 0 }}
                                                         transition={{ duration: 0.6, delay: index * 0.15 + 0.3 }}
                                                     >
-                                                <div className="flex flex-col md:flex-row items-start gap-6">
-                                                            <div className="space-y-4 flex-1 cursor-pointer" onClick={() => setActiveExpModal(exp)}>
+                                                <div className="flex flex-col md:flex-row items-start gap-6 relative z-10">
+                                                            <div className="space-y-4 flex-1">
                                                                 <motion.span 
-                                                                    className="text-[10px] font-bold tracking-widest text-zinc-500 uppercase px-2 py-1 border border-zinc-800 rounded inline-block"
+                                                                    className="text-[10px] font-bold tracking-widest text-zinc-500 uppercase px-2 py-1 border border-zinc-800 rounded inline-block group-hover:border-zinc-600 group-hover:text-zinc-400 group-active:border-zinc-600 group-active:text-zinc-400 transition-all duration-500"
                                                                     initial={{ opacity: 0, scale: 0.8 }}
                                                                     animate={isInView ? { opacity: 1, scale: 1 } : { opacity: 0, scale: 0.8 }}
                                                                     transition={{ duration: 0.4, delay: index * 0.15 + 0.4 }}
@@ -1947,18 +2395,52 @@
                                                                     {exp.tag}
                                                                 </motion.span>
                                                                 <motion.h4 
-                                                                    className="text-3xl font-light group-hover:translate-x-2 transition-transform"
-                                                                    initial={{ opacity: 0, x: -20 }}
-                                                                    animate={isInView ? { opacity: 1, x: 0 } : { opacity: 0, x: -20 }}
-                                                                    transition={{ duration: 0.6, delay: index * 0.15 + 0.5 }}
+                                                                    ref={titleRef}
+                                                                    className="text-3xl font-light inline-block cursor-pointer transition-all duration-300 group-hover:translate-x-2 group-active:translate-x-1 relative"
+                                                                    initial={{ opacity: 0, x: -20, scale: 1, y: 0 }}
+                                                                    animate={isInView ? { 
+                                                                        opacity: 1, 
+                                                                        x: 0,
+                                                                        y: -8,
+                                                                        scale: 1.1
+                                                                    } : { 
+                                                                        opacity: 1, 
+                                                                        x: 0,
+                                                                        y: 0,
+                                                                        scale: 1
+                                                                    }}
+                                                                    transition={{ 
+                                                                        opacity: { duration: 0.6, delay: index * 0.15 + 0.5 },
+                                                                        x: { duration: 0.6, delay: index * 0.15 + 0.5 },
+                                                                        y: { duration: 0.4, ease: "easeOut" },
+                                                                        scale: { duration: 0.4, ease: "easeOut" }
+                                                                    }}
                                                                     style={{
-                                                                        color: isInView ? '#ffffff' : '#71717a'
+                                                                        color: isInView ? '#ffffff' : '#71717a',
+                                                                        fontWeight: isInView ? 400 : 300,
+                                                                        transformOrigin: 'center center',
+                                                                        filter: isInView ? 'drop-shadow(0 8px 16px rgba(255, 255, 255, 0.1))' : 'none',
+                                                                        transition: 'filter 0.4s ease-out'
+                                                                    }}
+                                                                    onMouseEnter={(e) => {
+                                                                        e.currentTarget.style.textShadow = '0 0 8px rgba(255, 255, 255, 0.3)';
+                                                                        e.currentTarget.style.transform = 'scale(1.15)';
+                                                                    }}
+                                                                    onMouseLeave={(e) => {
+                                                                        e.currentTarget.style.textShadow = 'none';
+                                                                        e.currentTarget.style.transform = '';
+                                                                    }}
+                                                                    onMouseDown={(e) => {
+                                                                        e.currentTarget.style.transform = 'translateX(2px) scale(0.98)';
+                                                                    }}
+                                                                    onMouseUp={(e) => {
+                                                                        e.currentTarget.style.transform = 'scale(1.15)';
                                                                     }}
                                                                 >
                                                                     {exp.title}
                                                                 </motion.h4>
                                                                 <motion.p 
-                                                                    className="text-zinc-500 max-w-lg leading-relaxed"
+                                                                    className="text-zinc-500 max-w-lg leading-relaxed group-hover:text-zinc-400 group-active:text-zinc-400 transition-colors duration-500"
                                                                     initial={{ opacity: 0 }}
                                                                     animate={isInView ? { opacity: 1 } : { opacity: 0 }}
                                                                     transition={{ duration: 0.6, delay: index * 0.15 + 0.6 }}
@@ -1995,7 +2477,7 @@
                                                         {/* 底部分割線 */}
                                                         {!isLast && (
                                                             <motion.div 
-                                                                className="mt-8 md:mt-12 h-px bg-gradient-to-r from-transparent via-white/5 to-transparent"
+                                                                className="mt-2 md:mt-3 h-px bg-gradient-to-r from-transparent via-white/5 to-transparent"
                                                                 initial={{ scaleX: 0 }}
                                                                 animate={isInView ? { scaleX: 1 } : { scaleX: 0 }}
                                                                 transition={{ duration: 0.6, delay: index * 0.15 + 0.8 }}
@@ -2021,90 +2503,230 @@
                                     backgroundSize: '30px 30px',
                                     backgroundPosition: '0 0, 0 0'
                                 }}></div>
-                                <div className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-8 border-t border-white/5 pt-8 mt-8">
+                                <div className="mb-12 flex flex-col md:flex-row md:items-end justify-between gap-8 border-t border-white/5 pt-8 mt-8">
                                     <h2 className="text-4xl font-light text-white">CERTIFICATE</h2>
                                     <p className="text-zinc-500 text-sm max-w-sm">跨足專案管理、數據分析與金融實務。</p>
                                 </div>
-                                <div className="space-y-12">
-                                    {certificateGroups.map((group, groupIdx) => {
-                                        const groupRef = useRef(null);
-                                        const isInView = useInView(groupRef, { once: false, amount: 0.2 });
-                                        return (
-                                            <motion.div
-                                                key={groupIdx}
-                                                ref={groupRef}
-                                                initial={{ opacity: 0, y: 50 }}
-                                                animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 50 }}
-                                                transition={{ duration: 0.6, delay: groupIdx * 0.15 }}
-                                                className="grid grid-cols-1 lg:grid-cols-12 gap-12"
-                                            >
-                                            <div className="lg:col-span-3 text-xs font-bold tracking-[0.3em] uppercase text-zinc-600">{group.category}</div>
-                                            <div className="lg:col-span-9 grid grid-cols-1 md:grid-cols-2 gap-6">
-                                                    {group.items.map((cert, certIdx) => (
-                                                        <motion.div
-                                                            key={cert.id}
-                                                            initial={{ opacity: 0, x: -30 }}
-                                                            animate={isInView ? { opacity: 1, x: 0 } : { opacity: 0, x: -30 }}
-                                                            transition={{ duration: 0.5, delay: groupIdx * 0.15 + certIdx * 0.1 }}
-                                                            onClick={() => setActiveCertModal({...cert, category: group.category})}
-                                                            className="p-10 border border-white/5 rounded-2xl cursor-pointer hover:bg-white/[0.03] transition-all relative overflow-hidden backdrop-blur-sm group"
-                                                            style={{
-                                                                position: 'relative',
-                                                                isolation: 'isolate'
-                                                            }}
-                                                        >
-                                                            {/* 格子背景效果 */}
-                                                            <div className="absolute inset-0 opacity-[0.03] group-hover:opacity-[0.06] transition-opacity duration-700 pointer-events-none" style={{
-                                                                backgroundImage: 'linear-gradient(rgba(255,255,255,0.15) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.15) 1px, transparent 1px)',
-                                                                backgroundSize: '30px 30px',
-                                                                backgroundPosition: '0 0, 0 0'
-                                                            }}></div>
+
+                                {/* 3D卡牌輪播容器 */}
+                                <div className="relative h-[360px] md:h-[420px] overflow-hidden">
+                                    <div 
+                                        ref={cardCarouselRef}
+                                        className="relative w-full h-full flex items-center justify-center"
+                                        style={{ perspective: '1200px' }}
+                                        onMouseDown={(e) => {
+                                            setIsCardDragging(true);
+                                            setCardDragOffset(e.clientX);
+                                        }}
+                                        onTouchStart={(e) => {
+                                            setIsCardDragging(true);
+                                            setCardDragOffset(e.touches[0].clientX);
+                                        }}
+                                        onMouseMove={(e) => {
+                                            if (isCardDragging) {
+                                                const delta = e.clientX - cardDragOffset;
+                                                if (Math.abs(delta) > 150) {
+                                                    if (delta > 0) {
+                                                        // 右滑 - 上一張
+                                                        setCurrentCardIndex((prev) => {
+                                                            if (prev === 0) return allCertificates.length - 1;
+                                                            return prev - 1;
+                                                        });
+                                                        setIsCardDragging(false);
+                                                    } else {
+                                                        // 左滑 - 下一張
+                                                        setCurrentCardIndex((prev) => {
+                                                            if (prev === allCertificates.length - 1) return 0;
+                                                            return prev + 1;
+                                                        });
+                                                        setIsCardDragging(false);
+                                                    }
+                                                }
+                                            }
+                                        }}
+                                        onTouchMove={(e) => {
+                                            if (isCardDragging) {
+                                                const delta = e.touches[0].clientX - cardDragOffset;
+                                                if (Math.abs(delta) > 150) {
+                                                    if (delta > 0) {
+                                                        setCurrentCardIndex((prev) => {
+                                                            if (prev === 0) return allCertificates.length - 1;
+                                                            return prev - 1;
+                                                        });
+                                                        setIsCardDragging(false);
+                                                    } else {
+                                                        setCurrentCardIndex((prev) => {
+                                                            if (prev === allCertificates.length - 1) return 0;
+                                                            return prev + 1;
+                                                        });
+                                                        setIsCardDragging(false);
+                                                    }
+                                                }
+                                            }
+                                        }}
+                                        onMouseUp={() => setIsCardDragging(false)}
+                                        onMouseLeave={() => setIsCardDragging(false)}
+                                        onTouchEnd={() => setIsCardDragging(false)}
+                                    >
+                                        {/* 所有卡牌環繞成圓形 */}
+                                        {allCertificates.map((cert, index) => {
+                                            const totalCards = allCertificates.length;
+                                            let offset = index - currentCardIndex;
+                                            
+                                            // 規範化 offset 到 [-totalCards/2, totalCards/2] 範圍，實現圓形循環
+                                            // 例如：totalCards=7時，offset=6 會變成 offset=-1（左邊最後一張）
+                                            if (offset > totalCards / 2) {
+                                                offset = offset - totalCards;
+                                            } else if (offset < -totalCards / 2) {
+                                                offset = offset + totalCards;
+                                            }
+                                            
+                                            const absOffset = Math.abs(offset);
+                                            const isActive = offset === 0;
+                                            
+                                            // 計算圓形排列
+                                            const angleStep = (360 / totalCards) * (Math.PI / 180);
+                                            // 根據卡片數量動態調整半徑，確保手機螢幕能看到所有卡牌
+                                            const radius = totalCards <= 5 ? 180 : (totalCards <= 7 ? 200 : 220);
+                                            
+                                            // 計算當前卡牌在圓上的角度
+                                            // offset = 1 的卡牌應該在右邊（下一張），所以用負角度
+                                            const angle = -(offset * angleStep) + (Math.PI / 2);
+                                            
+                                            // 計算圓形上的 x 和 z 位置
+                                            const x = Math.cos(angle) * radius;
+                                            const z = Math.sin(angle) * radius;
+                                            
+                                            // 卡牌正面朝向（不旋轉）
+                                            const rotationY = 0;
+                                            
+                                            // 中間卡片：上浮15px，完全不透明，正常大小
+                                            // 左右卡片：下沉25px、縮放0.85、Z軸後退70px、透明度0.6
+                                            const translateY = isActive ? -15 : 25;
+                                            const translateZExtra = isActive ? 0 : -70;
+                                            const scale = isActive ? 1 : 0.85;
+                                            
+                                            // 靜止時只顯示3張（offset = -1, 0, 1），轉動時其他卡牌可見
+                                            // absOffset > 1 的卡牌在靜止時完全隱藏，轉動時短暫可見
+                                            const maxVisibleOffset = isCardTransitioning ? 2 : 1;
+                                            const opacity = absOffset <= maxVisibleOffset ? (isActive ? 1 : 0.6) : 0;
+                                            
+                                            return (
+                                                <motion.div
+                                                    key={cert.id}
+                                                    className="absolute w-[180px] md:w-[220px] h-[220px] md:h-[260px] cursor-pointer"
+                                                    style={{
+                                                        transformStyle: 'preserve-3d',
+                                                        transform: `translateX(${x}px) translateY(${translateY}px) translateZ(${z + translateZExtra}px) scale(${scale}) rotateY(${rotationY}deg)`,
+                                                        opacity: opacity,
+                                                        zIndex: isActive ? 10 : (absOffset <= maxVisibleOffset ? 5 - absOffset : 0),
+                                                        pointerEvents: absOffset <= maxVisibleOffset ? 'auto' : 'none',
+                                                        visibility: absOffset <= maxVisibleOffset ? 'visible' : 'hidden'
+                                                    }}
+                                                    animate={{
+                                                        transform: `translateX(${x}px) translateY(${translateY}px) translateZ(${z + translateZExtra}px) scale(${scale}) rotateY(${rotationY}deg)`,
+                                                        opacity: opacity
+                                                    }}
+                                                    transition={{ 
+                                                        duration: 0.6, 
+                                                        ease: [0.4, 0, 0.2, 1] // cubic-bezier(0.4, 0, 0.2, 1)
+                                                    }}
+                                                    onClick={() => isActive && setActiveCertModal(cert)}
+                                                >
+                                                    {/* 玻璃態卡片 */}
+                                                    <div 
+                                                        className="w-full h-full p-3 md:p-[14px] border rounded-xl md:rounded-2xl relative overflow-hidden"
+                                                        style={{
+                                                            border: '1px solid rgba(255, 255, 255, 0.2)',
+                                                            background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%)',
+                                                            backdropFilter: 'blur(20px)',
+                                                            borderRadius: '16px',
+                                                            boxShadow: isActive 
+                                                                ? 'inset 0 1px 0 0 rgba(255, 255, 255, 0.2), 0 20px 40px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.1)'
+                                                                : 'inset 0 1px 0 0 rgba(255, 255, 255, 0.1), 0 10px 20px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(255, 255, 255, 0.05)'
+                                                        }}
+                                                    >
+                                                        <div className="relative z-10 h-full flex flex-col">
+                                                            {/* 證照圖片 */}
+                                                            <div className="h-[110px] md:h-[130px] mb-3 md:mb-4 rounded-lg overflow-hidden bg-white/5">
+                                                                <img 
+                                                                    src={cert.image} 
+                                                                    alt={cert.title}
+                                                                    className="w-full h-full object-contain"
+                                                                    style={{ 
+                                                                        transform: cert.needsRotation ? 'rotate(90deg)' : 'none',
+                                                                        transformOrigin: 'center',
+                                                                        opacity: 0.6,
+                                                                        filter: 'brightness(0.9)'
+                                                                    }}
+                                                                />
+                                                            </div>
                                                             
-                                                            <div className="relative z-10">
-                                                                <div className="flex items-center gap-3 mb-3">
+                                                            {/* 證照資訊 */}
+                                                            <div className="flex-1 flex flex-col justify-end">
+                                                                <div className="flex items-center gap-3">
                                                                     {cert.icon && (
-                                                                        <div className="w-8 h-8 flex items-center justify-center flex-shrink-0 grayscale opacity-60">
+                                                                        <div className="w-6 h-6 flex items-center justify-center flex-shrink-0 grayscale opacity-60">
                                                                             {cert.icon === "google" && (
-                                                                                <svg className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                                                                                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
                                                                                     <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
                                                                                     <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
                                                                                     <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
                                                                                     <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
                                                                                 </svg>
                                                                             )}
-                                                                            {cert.icon === "trust" && (
-                                                                                <img src={IMAGES.iconTrust} alt="信託" className="w-6 h-6 object-contain" style={{ mixBlendMode: 'multiply', filter: 'contrast(1.3) brightness(0.85) grayscale(100%)' }} />
-                                                                            )}
-                                                                            {cert.icon === "bank" && (
-                                                                                <img src={IMAGES.iconBank} alt="銀行" className="w-6 h-6 object-contain" style={{ mixBlendMode: 'multiply', filter: 'contrast(1.3) brightness(0.85) grayscale(100%)' }} />
-                                                                            )}
-                                                                            {cert.icon === "ets" && (
-                                                                                <img src={IMAGES.iconToeic} alt="TOEIC" className="w-6 h-6 object-contain" style={{ mixBlendMode: 'multiply', filter: 'contrast(1.3) brightness(0.85) grayscale(100%)' }} />
-                                                                            )}
-                                                                            {cert.icon === "cia" && (
-                                                                                <img src={IMAGES.iconCia} alt="CIA" className="w-10 h-10 object-contain" style={{ mixBlendMode: 'multiply', filter: 'contrast(1.3) brightness(0.85) grayscale(100%)' }} />
-                                                                            )}
-                                                    </div>
+                                                                            {cert.icon === "trust" && <img src={IMAGES.iconTrust} alt="信託" className="w-5 h-5 object-contain" style={{ mixBlendMode: 'multiply', filter: 'contrast(1.3) brightness(0.85) grayscale(100%)' }} />}
+                                                                            {cert.icon === "bank" && <img src={IMAGES.iconBank} alt="銀行" className="w-5 h-5 object-contain" style={{ mixBlendMode: 'multiply', filter: 'contrast(1.3) brightness(0.85) grayscale(100%)' }} />}
+                                                                            {cert.icon === "ets" && <img src={IMAGES.iconToeic} alt="TOEIC" className="w-5 h-5 object-contain" style={{ mixBlendMode: 'multiply', filter: 'contrast(1.3) brightness(0.85) grayscale(100%)' }} />}
+                                                                            {cert.icon === "cia" && <img src={IMAGES.iconCia} alt="CIA" className="w-8 h-8 object-contain" style={{ mixBlendMode: 'multiply', filter: 'contrast(1.3) brightness(0.85) grayscale(100%)' }} />}
+                                                                        </div>
                                                                     )}
-                                                                    <div className="flex-1">
-                                                                        <div className="flex items-center justify-between">
-                                                                            <h5 className="text-xl font-light">{cert.title}</h5>
-                                                                            {cert.badge && (
-                                                                                <div className="w-8 h-8 rounded-full border border-yellow-500/50 bg-yellow-500/10 flex items-center justify-center">
-                                                                                    <span className="text-[8px] font-bold text-yellow-400 uppercase tracking-wider">{cert.badge}</span>
-                                            </div>
-                                                                            )}
-                                        </div>
-                                                                        <p className="text-zinc-600 text-[10px] tracking-widest uppercase font-bold mt-1">{cert.issuer}</p>
+                                                                    <div className="flex-1 min-w-0">
+                                                                        <h5 className="text-sm md:text-base font-light text-white mb-0.5 md:mb-1 truncate">{cert.title}</h5>
+                                                                        <p className="text-zinc-400 text-[9px] md:text-[10px] tracking-widest uppercase truncate">{cert.issuer}</p>
                                                                     </div>
+                                                                    {cert.badge && (
+                                                                        <div className="w-6 h-6 rounded-full border border-yellow-500/50 bg-yellow-500/10 flex items-center justify-center flex-shrink-0">
+                                                                            <span className="text-[7px] font-bold text-yellow-400 uppercase">{cert.badge}</span>
+                                                                        </div>
+                                                                    )}
                                                                 </div>
                                                             </div>
-                                                        </motion.div>
-                                    ))}
-                                                </div>
-                                            </motion.div>
-                                        );
-                                    })}
+                                                        </div>
+                                                    </div>
+                                                </motion.div>
+                                            );
+                                        })}
+                                    </div>
+                                    
+                                    {/* 左右箭頭指示器 */}
+                                    <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-4 text-white/30">
+                                        <button 
+                                            onClick={() => setCurrentCardIndex((prev) => {
+                                                if (prev === 0) return allCertificates.length - 1;
+                                                return prev - 1;
+                                            })}
+                                            className="w-10 h-10 rounded-full border border-white/20 bg-white/5 flex items-center justify-center transition-all hover:bg-white/10 hover:border-white/40 cursor-pointer"
+                                        >
+                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                                            </svg>
+                                        </button>
+                                        <div className="text-xs font-light">
+                                            {currentCardIndex + 1} / {allCertificates.length}
+                                        </div>
+                                        <button 
+                                            onClick={() => setCurrentCardIndex((prev) => {
+                                                if (prev === allCertificates.length - 1) return 0;
+                                                return prev + 1;
+                                            })}
+                                            className="w-10 h-10 rounded-full border border-white/20 bg-white/5 flex items-center justify-center transition-all hover:bg-white/10 hover:border-white/40 cursor-pointer"
+                                        >
+                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                            </svg>
+                                        </button>
+                                    </div>
                                 </div>
                             </section>
 
@@ -2337,36 +2959,48 @@
                                                 }, 100);
                                             }} className="text-3xl font-thin hover:text-white transition hover:rotate-90 duration-300">×</button>
                                     </div>
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
                                         {projects.map((p, idx) => (
                                             <motion.div 
                                                 key={p.id} 
                                                 initial={{ opacity: 0, y: 20 }}
                                                 animate={{ opacity: 1, y: 0 }}
                                                 transition={{ duration: 0.5, delay: idx * 0.1 }}
-                                                className="group p-8 md:p-10 border border-white/5 rounded-3xl hover:bg-white/[0.02] cursor-pointer transition-all relative overflow-hidden backdrop-blur-sm"
+                                                className="group p-3 md:p-4 border border-white/8 rounded-lg cursor-pointer transition-all relative overflow-hidden backdrop-blur-xl hover:backdrop-blur-2xl hover:border-white/15 hover:shadow-[0_6px_24px_0_rgba(255,255,255,0.08)] hover:shadow-blue-500/15 hover:-translate-y-0.5"
                                                 style={{
                                                     position: 'relative',
-                                                    isolation: 'isolate'
+                                                    isolation: 'isolate',
+                                                    background: 'linear-gradient(135deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.01) 100%)',
+                                                    boxShadow: '0 2px 12px 0 rgba(0,0,0,0.15), inset 0 1px 0 0 rgba(255,255,255,0.08), inset 0 -1px 0 0 rgba(255,255,255,0.03)'
                                                 }}
                                                 onClick={() => {
                                                     setActiveProjectInfo(p);
                                                 setActiveProjectModal(false);
                                                 }}
                                             >
-                                                {/* 卡片格子背景 */}
-                                                <div className="absolute inset-0 opacity-[0.02] group-hover:opacity-[0.05] transition-opacity duration-700 pointer-events-none" style={{
-                                                    backgroundImage: 'linear-gradient(rgba(255,255,255,0.15) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.15) 1px, transparent 1px)',
-                                                    backgroundSize: '20px 20px',
+                                                {/* 頂部裝飾線 */}
+                                                <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+                                                
+                                                {/* 玻璃態光效 */}
+                                                <div className="absolute inset-0 bg-gradient-to-br from-white/8 via-white/3 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-lg"></div>
+                                                
+                                                {/* 邊框光效 - 更精緻 */}
+                                                <div className="absolute -inset-[0.5px] bg-gradient-to-r from-blue-500/15 via-purple-500/15 to-cyan-500/15 rounded-lg opacity-0 group-hover:opacity-100 blur-[2px] transition-opacity duration-500 -z-10"></div>
+                                                
+                                                {/* 角落裝飾點 */}
+                                                <div className="absolute top-2 right-2 w-1 h-1 bg-white/20 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+                                                <div className="absolute bottom-2 left-2 w-0.5 h-0.5 bg-white/15 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+                                                
+                                                {/* 卡片格子背景 - 更小更淡 */}
+                                                <div className="absolute inset-0 opacity-[0.01] group-hover:opacity-[0.02] transition-opacity duration-700 pointer-events-none" style={{
+                                                    backgroundImage: 'linear-gradient(rgba(255,255,255,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.08) 1px, transparent 1px)',
+                                                    backgroundSize: '10px 10px',
                                                     backgroundPosition: '0 0, 0 0'
                                                 }}></div>
                                                 
-                                                {/* 卡片光效 */}
-                                                <div className="absolute inset-0 bg-gradient-to-br from-white/0 via-white/0 to-white/5 opacity-0 group-hover:opacity-100 transition-opacity duration-700 rounded-3xl"></div>
-                                                
                                                 <div className="relative z-10">
-                                                    <h4 className="text-xl md:text-2xl font-light mb-2 text-white group-hover:translate-x-1 transition-transform">{p.title}</h4>
-                                                    <p className="text-zinc-500 text-sm group-hover:text-zinc-400 transition-colors">{p.desc}</p>
+                                                    <h4 className="text-sm md:text-base font-light mb-0.5 text-white group-hover:text-transparent group-hover:bg-clip-text group-hover:bg-gradient-to-r group-hover:from-blue-400 group-hover:via-purple-400 group-hover:to-cyan-400 group-hover:translate-x-0.5 transition-all duration-500">{p.title}</h4>
+                                                    <p className="text-zinc-500 text-[9px] md:text-[10px] leading-tight group-hover:text-transparent group-hover:bg-clip-text group-hover:bg-gradient-to-r group-hover:from-blue-300 group-hover:via-purple-300 group-hover:to-cyan-300 transition-all duration-500">{p.desc}</p>
                                             </div>
                                             </motion.div>
                                         ))}
