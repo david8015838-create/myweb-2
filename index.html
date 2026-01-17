@@ -167,6 +167,31 @@
             const [videoScale, setVideoScale] = useState(1); // 用於動態縮放視頻
             const zoomAnimationRef = useRef(null); // 用於儲存 GSAP 動畫引用
             
+            // 確保視頻在頁面加載時顯示第一幀
+            useEffect(() => {
+                const video = videoRef.current;
+                if (!video) return;
+                
+                // 當視頻元數據加載完成時，顯示第一幀
+                const handleLoadedMetadata = () => {
+                    // 設置當前時間為 0，顯示第一幀
+                    video.currentTime = 0;
+                    // 確保視頻可見
+                    video.style.display = 'block';
+                };
+                
+                if (video.readyState >= 1) {
+                    // 如果已經加載，直接設置
+                    handleLoadedMetadata();
+                } else {
+                    video.addEventListener('loadedmetadata', handleLoadedMetadata);
+                }
+                
+                return () => {
+                    video.removeEventListener('loadedmetadata', handleLoadedMetadata);
+                };
+            }, []);
+            
             // 設置視頻放大動畫 - 使用 GSAP 創建連續平滑的動畫
             useEffect(() => {
                 const video = videoRef.current;
@@ -1461,12 +1486,15 @@
                                     willChange: 'transform', // 優化：使用 GPU 加速
                                     backfaceVisibility: 'hidden' // 優化：提升渲染性能
                                 }}
-                                onLoadedMetadata={() => {
+                                onLoadedMetadata={(e) => {
                                     console.log('Video metadata loaded successfully');
-                                    const video = videoRef.current;
+                                    const video = e.target;
                                     if (video) {
                                         console.log('Video duration:', video.duration);
                                         console.log('Video readyState:', video.readyState);
+                                        // 確保顯示第一幀
+                                        video.currentTime = 0;
+                                        video.style.display = 'block';
                                     }
                                 }}
                                 onError={(e) => {
