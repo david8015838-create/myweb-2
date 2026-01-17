@@ -212,15 +212,25 @@
                         // 使用 GSAP 直接操作視頻元素的 transform，創建連續平滑的放大動畫
                         const videoElement = document.getElementById('intro-video');
                         if (videoElement) {
-                            // 設置初始 scale
-                            gsap.set(videoElement, { scale: 1, transformOrigin: 'center center' });
+                            // 設置初始 scale - 使用 scale3d 強制 GPU 加速
+                            gsap.set(videoElement, { 
+                                scale: 1, 
+                                scaleX: 1,
+                                scaleY: 1,
+                                transformOrigin: 'center center',
+                                force3D: true // 強制使用 3D 加速
+                            });
                             
                             // 創建連續平滑的放大動畫 - 進一步縮短時間
                             // 優化：讓 GSAP 直接操作 DOM，移除 onUpdate 中的 state 更新以提升性能
+                            // 使用 force3D 和 scaleX/scaleY 以獲得更好的性能
                             zoomAnimationRef.current = gsap.to(videoElement, {
                                 scale: 3,
+                                scaleX: 3,
+                                scaleY: 3,
                                 duration: remainingTime * 0.5, // 縮短到50%的時間，大幅加快放大速度
                                 ease: "power4.in", // 使用最快的加速曲線，讓放大更迅速
+                                force3D: true, // 強制使用 3D 加速
                                 // 移除 onUpdate 避免頻繁的 state 更新導致的重渲染
                                 onComplete: () => {
                                     setVideoScale(3); // 只在完成時更新一次
@@ -240,7 +250,7 @@
                     }
                 };
                 
-                const interval = setInterval(checkVideoProgress, 50); // 每50ms檢查一次，更頻繁
+                const interval = setInterval(checkVideoProgress, 100); // 每100ms檢查一次，減少更新頻率提升性能
                 
                 return () => {
                     clearInterval(interval);
@@ -1473,6 +1483,8 @@
                                 muted
                                 playsInline
                                 preload="auto"
+                                disablePictureInPicture
+                                disableRemotePlayback
                                 style={{
                                     position: 'absolute',
                                     top: 0,
@@ -1480,11 +1492,16 @@
                                     width: '100%',
                                     height: '100%',
                                     objectFit: 'cover',
-                                    transform: `scale(${videoScale})`,
+                                    transform: `scale3d(${videoScale}, ${videoScale}, 1)`, // 使用 scale3d 強制 GPU 加速
                                     transformOrigin: 'center center',
                                     zIndex: 10,
-                                    willChange: 'transform', // 優化：使用 GPU 加速
-                                    backfaceVisibility: 'hidden' // 優化：提升渲染性能
+                                    willChange: 'transform',
+                                    backfaceVisibility: 'hidden',
+                                    perspective: 1000, // 添加透視以啟用 3D 加速
+                                    transformStyle: 'preserve-3d', // 保持 3D 變換
+                                    WebkitTransform: `scale3d(${videoScale}, ${videoScale}, 1)`, // WebKit 前綴
+                                    WebkitBackfaceVisibility: 'hidden',
+                                    WebkitPerspective: 1000
                                 }}
                                 onLoadedMetadata={(e) => {
                                     console.log('Video metadata loaded successfully');
