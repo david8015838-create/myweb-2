@@ -196,6 +196,7 @@
             const [cardDragOffset, setCardDragOffset] = useState(0);
             const [isCardTransitioning, setIsCardTransitioning] = useState(false);
             const cardCarouselRef = useRef(null);
+            const cardSwitchTriggeredRef = useRef(false); // 防止在同一滑动过程中多次触发切换
             const wheelThrottleRef = useRef(false);
             const wheelDeltaRef = useRef(0);
             const [iframeScale, setIframeScale] = useState(0.85);
@@ -205,6 +206,9 @@
             const videoRef = useRef(null);
             const [videoPlaying, setVideoPlaying] = useState(false);
             const [videoScale, setVideoScale] = useState(1); // 用於動態縮放視頻
+            const [videoBuffering, setVideoBuffering] = useState(true); // 視頻是否正在緩衝
+            const [videoReady, setVideoReady] = useState(false); // 視頻是否準備好播放
+            const [videoLoading, setVideoLoading] = useState(false); // 點擊按鈕後的加載狀態
             const zoomAnimationRef = useRef(null); // 用於儲存 GSAP 動畫引用
             const [sliderPosition, setSliderPosition] = useState(0); // 滑塊位置 (0-100)
             const [isDragging, setIsDragging] = useState(false);
@@ -226,28 +230,85 @@
                 return () => window.removeEventListener('scroll', handleScroll);
             }, []);
             
-            // 確保視頻在頁面加載時顯示第一幀
+            // 確保視頻在頁面加載時顯示第一幀並監聽緩衝狀態
             useEffect(() => {
                 const video = videoRef.current;
                 if (!video) return;
                 
                 // 當視頻元數據加載完成時，顯示第一幀
                 const handleLoadedMetadata = () => {
-                    // 設置當前時間為 0，顯示第一幀
                     video.currentTime = 0;
-                    // 確保視頻可見
                     video.style.display = 'block';
+                    video.playbackRate = 1.5;
+                    console.log('Video metadata loaded');
+                };
+                
+                // 當視頻可以開始播放時（有足夠緩衝）
+                const handleCanPlay = () => {
+                    console.log('Video can play');
+                    setVideoBuffering(false);
+                };
+                
+                // 當視頻可以流暢播放完整個視頻時（重要！）
+                const handleCanPlayThrough = () => {
+                    console.log('Video can play through - fully buffered');
+                    setVideoReady(true);
+                    setVideoBuffering(false);
+                };
+                
+                // 視頻正在等待緩衝數據時
+                const handleWaiting = () => {
+                    console.log('Video waiting for buffer');
+                    setVideoBuffering(true);
+                };
+                
+                // 視頻繼續播放時
+                const handlePlaying = () => {
+                    console.log('Video playing');
+                    setVideoBuffering(false);
+                };
+                
+                // 視頻加載進度
+                const handleProgress = () => {
+                    if (video.buffered.length > 0) {
+                        const bufferedEnd = video.buffered.end(video.buffered.length - 1);
+                        const duration = video.duration;
+                        if (duration > 0) {
+                            const bufferedPercent = (bufferedEnd / duration) * 100;
+                            console.log(`Buffered: ${bufferedPercent.toFixed(1)}%`);
+                            // 如果緩衝超過30%，認為可以開始播放
+                            if (bufferedPercent >= 30 && !videoReady) {
+                                setVideoReady(true);
+                            }
+                        }
+                    }
                 };
                 
                 if (video.readyState >= 1) {
-                    // 如果已經加載，直接設置
                     handleLoadedMetadata();
+                    if (video.readyState >= 3) { // HAVE_FUTURE_DATA
+                        handleCanPlay();
+                    }
+                    if (video.readyState >= 4) { // HAVE_ENOUGH_DATA
+                        handleCanPlayThrough();
+                    }
                 } else {
                     video.addEventListener('loadedmetadata', handleLoadedMetadata);
                 }
                 
+                video.addEventListener('canplay', handleCanPlay);
+                video.addEventListener('canplaythrough', handleCanPlayThrough);
+                video.addEventListener('waiting', handleWaiting);
+                video.addEventListener('playing', handlePlaying);
+                video.addEventListener('progress', handleProgress);
+                
                 return () => {
                     video.removeEventListener('loadedmetadata', handleLoadedMetadata);
+                    video.removeEventListener('canplay', handleCanPlay);
+                    video.removeEventListener('canplaythrough', handleCanPlayThrough);
+                    video.removeEventListener('waiting', handleWaiting);
+                    video.removeEventListener('playing', handlePlaying);
+                    video.removeEventListener('progress', handleProgress);
                 };
             }, []);
             
@@ -1659,14 +1720,14 @@
                     
                     e.preventDefault();
                     
+                    // 如果還在節流期，不處理（防止連續切換）
+                    if (wheelThrottleRef.current) return;
+                    
                     // 累積deltaX
                     wheelDeltaRef.current += Math.abs(e.deltaX);
                     
-                    // 如果還在節流期，不處理
-                    if (wheelThrottleRef.current) return;
-                    
-                    // 如果累積值達到閾值150px
-                    if (wheelDeltaRef.current >= 150) {
+                    // 增加閾值到500px，降低触控板靈敏度，需要更大幅度的滑動才切換
+                    if (wheelDeltaRef.current >= 500) {
                         const direction = e.deltaX > 0 ? 1 : -1;
                         
                         if (direction > 0) {
@@ -1683,13 +1744,13 @@
                             });
                         }
                         
-                        // 重置累積值並啟動節流
+                        // 重置累積值並啟動節流（增加節流時間到1000ms，防止快速連續切換）
                         wheelDeltaRef.current = 0;
                         wheelThrottleRef.current = true;
                         
                         setTimeout(() => {
                             wheelThrottleRef.current = false;
-                        }, 600);
+                        }, 1000);
                     }
                 };
 
@@ -1727,7 +1788,7 @@
                             <video 
                                 ref={videoRef}
                                 id="intro-video"
-                                src={encodeURI("外星人看電視的動畫影片.mp4")}
+                                src={encodeURI("./外星人看電視的動畫影片.mp4")}
                                 className="absolute inset-0 w-full h-full object-cover"
                                 muted
                                 playsInline
@@ -1765,6 +1826,10 @@
                                         video.playbackRate = 1.5;
                                     }
                                 }}
+                                onPlay={() => {
+                                    console.log('Video started playing');
+                                    setVideoPlaying(true);
+                                }}
                                 onError={(e) => {
                                     console.error('Video loading error:', e);
                                     const video = e.target;
@@ -1776,6 +1841,34 @@
                                 }}
                                 onCanPlay={() => {
                                     console.log('Video can play - ready to start');
+                                    setVideoBuffering(false);
+                                }}
+                                onCanPlayThrough={() => {
+                                    console.log('Video can play through - fully buffered');
+                                    setVideoReady(true);
+                                    setVideoBuffering(false);
+                                }}
+                                onWaiting={() => {
+                                    console.log('Video waiting for buffer');
+                                    setVideoBuffering(true);
+                                }}
+                                onPlaying={() => {
+                                    console.log('Video playing');
+                                    setVideoBuffering(false);
+                                }}
+                                onProgress={(e) => {
+                                    const video = e.target;
+                                    if (video.buffered.length > 0) {
+                                        const bufferedEnd = video.buffered.end(video.buffered.length - 1);
+                                        const duration = video.duration;
+                                        if (duration > 0) {
+                                            const bufferedPercent = (bufferedEnd / duration) * 100;
+                                            // 如果緩衝超過30%，認為可以開始播放
+                                            if (bufferedPercent >= 30 && !videoReady) {
+                                                setVideoReady(true);
+                                            }
+                                        }
+                                    }
                                 }}
                                 onEnded={() => {
                                     // 如果還沒觸發切換（保險措施），在視頻結束時切換
@@ -1840,27 +1933,78 @@
                                             
                                             <div className="flex flex-col items-center">
                                                 <button 
-                                                    onClick={(e) => {
+                                                    onClick={async (e) => {
                                                         e.preventDefault();
                                                         e.stopPropagation();
                                                         console.log('Button clicked! Starting video...');
+                                                        
                                                         if (videoRef.current) {
+                                                            setVideoLoading(true);
+                                                            const video = videoRef.current;
+                                                            
                                                             // 重置切換標誌
                                                             window.videoSwitchTriggered = false;
-                                                            // 設置播放速度加速（1.5倍速）
-                                                            videoRef.current.playbackRate = 1.5;
-                                                            setVideoPlaying(true);
-                                                            videoRef.current.play().catch(err => {
+                                                            video.playbackRate = 1.5;
+                                                            
+                                                            // 如果視頻還沒準備好，等待緩衝
+                                                            if (!videoReady) {
+                                                                console.log('Waiting for video to buffer...');
+                                                                
+                                                                // 檢查緩衝狀態
+                                                                const checkBuffer = () => {
+                                                                    return new Promise((resolve) => {
+                                                                        if (video.buffered.length > 0) {
+                                                                            const bufferedEnd = video.buffered.end(video.buffered.length - 1);
+                                                                            const duration = video.duration;
+                                                                            if (duration > 0 && bufferedEnd / duration >= 0.3) { // 至少30%緩衝
+                                                                                resolve(true);
+                                                                                return;
+                                                                            }
+                                                                        }
+                                                                        
+                                                                        // 等待 canplaythrough 事件
+                                                                        const onCanPlayThrough = () => {
+                                                                            video.removeEventListener('canplaythrough', onCanPlayThrough);
+                                                                            resolve(true);
+                                                                        };
+                                                                        video.addEventListener('canplaythrough', onCanPlayThrough);
+                                                                        
+                                                                        // 最多等待5秒
+                                                                        setTimeout(() => {
+                                                                            video.removeEventListener('canplaythrough', onCanPlayThrough);
+                                                                            resolve(true); // 即使沒完全緩衝也開始播放
+                                                                        }, 5000);
+                                                                    });
+                                                                };
+                                                                
+                                                                await checkBuffer();
+                                                            }
+                                                            
+                                                            // 開始播放
+                                                            try {
+                                                                await video.play();
+                                                                setVideoPlaying(true);
+                                                                setVideoLoading(false);
+                                                                console.log('Video started playing successfully');
+                                                            } catch (err) {
                                                                 console.error('Video play failed:', err);
-                                                            });
+                                                                setVideoLoading(false);
+                                                            }
                                                         }
                                                     }}
-                                                    className="interactive px-8 md:px-10 py-4 md:py-5 bg-[#FFD90F] text-[#5E3023] font-black rounded-full shadow-[0_8px_0_#5E3023] hover:translate-y-1 hover:shadow-[0_4px_0_#5E3023] transition-all uppercase tracking-widest text-sm md:text-base cursor-pointer z-50"
+                                                    className="interactive px-8 md:px-10 py-4 md:py-5 bg-[#FFD90F] text-[#5E3023] font-black rounded-full shadow-[0_8px_0_#5E3023] hover:translate-y-1 hover:shadow-[0_4px_0_#5E3023] transition-all uppercase tracking-widest text-sm md:text-base cursor-pointer z-50 disabled:opacity-50 disabled:cursor-not-allowed"
                                                     style={{ pointerEvents: 'auto', display: videoPlaying ? 'none' : 'block' }}
+                                                    disabled={videoLoading}
                                                 >
-                                                    ready to start
+                                                    {videoLoading ? 'Loading...' : 'ready to start'}
                                                 </button>
                                                 <p className="mt-6 md:mt-8 text-[12px] md:text-[10px] font-bold text-zinc-600 tracking-[0.5em] uppercase" style={{ display: videoPlaying ? 'none' : 'block' }}>Begin Your Journey</p>
+                                                {(videoLoading || (videoBuffering && videoPlaying)) && (
+                                                    <div className="mt-4 flex items-center justify-center">
+                                                        <div className="w-8 h-8 border-4 border-[#FFD90F] border-t-transparent rounded-full animate-spin"></div>
+                                                        <span className="ml-3 text-[#FFD90F] text-sm">Loading...</span>
+                                                    </div>
+                                                )}
                                             </div>
                                         </motion.div>
                                     )}
@@ -2517,15 +2661,18 @@
                                         onMouseDown={(e) => {
                                             setIsCardDragging(true);
                                             setCardDragOffset(e.clientX);
+                                            cardSwitchTriggeredRef.current = false; // 重置触发标志
                                         }}
                                         onTouchStart={(e) => {
                                             setIsCardDragging(true);
                                             setCardDragOffset(e.touches[0].clientX);
+                                            cardSwitchTriggeredRef.current = false; // 重置触发标志
                                         }}
                                         onMouseMove={(e) => {
-                                            if (isCardDragging) {
+                                            if (isCardDragging && !cardSwitchTriggeredRef.current) {
                                                 const delta = e.clientX - cardDragOffset;
-                                                if (Math.abs(delta) > 150) {
+                                                if (Math.abs(delta) > 250) { // 增加阈值从150到250，降低灵敏度
+                                                    cardSwitchTriggeredRef.current = true; // 标记已触发，防止重复
                                                     if (delta > 0) {
                                                         // 右滑 - 上一張
                                                         setCurrentCardIndex((prev) => {
@@ -2533,6 +2680,7 @@
                                                             return prev - 1;
                                                         });
                                                         setIsCardDragging(false);
+                                                        setCardDragOffset(e.clientX); // 更新起始位置，防止继续滑动时再次触发
                                                     } else {
                                                         // 左滑 - 下一張
                                                         setCurrentCardIndex((prev) => {
@@ -2540,33 +2688,46 @@
                                                             return prev + 1;
                                                         });
                                                         setIsCardDragging(false);
+                                                        setCardDragOffset(e.clientX); // 更新起始位置，防止继续滑动时再次触发
                                                     }
                                                 }
                                             }
                                         }}
                                         onTouchMove={(e) => {
-                                            if (isCardDragging) {
+                                            if (isCardDragging && !cardSwitchTriggeredRef.current) {
                                                 const delta = e.touches[0].clientX - cardDragOffset;
-                                                if (Math.abs(delta) > 150) {
+                                                if (Math.abs(delta) > 250) { // 增加阈值从150到250，降低灵敏度
+                                                    cardSwitchTriggeredRef.current = true; // 标记已触发，防止重复
                                                     if (delta > 0) {
                                                         setCurrentCardIndex((prev) => {
                                                             if (prev === 0) return allCertificates.length - 1;
                                                             return prev - 1;
                                                         });
                                                         setIsCardDragging(false);
+                                                        setCardDragOffset(e.touches[0].clientX); // 更新起始位置，防止继续滑动时再次触发
                                                     } else {
                                                         setCurrentCardIndex((prev) => {
                                                             if (prev === allCertificates.length - 1) return 0;
                                                             return prev + 1;
                                                         });
                                                         setIsCardDragging(false);
+                                                        setCardDragOffset(e.touches[0].clientX); // 更新起始位置，防止继续滑动时再次触发
                                                     }
                                                 }
                                             }
                                         }}
-                                        onMouseUp={() => setIsCardDragging(false)}
-                                        onMouseLeave={() => setIsCardDragging(false)}
-                                        onTouchEnd={() => setIsCardDragging(false)}
+                                        onMouseUp={() => {
+                                            setIsCardDragging(false);
+                                            cardSwitchTriggeredRef.current = false; // 重置触发标志
+                                        }}
+                                        onMouseLeave={() => {
+                                            setIsCardDragging(false);
+                                            cardSwitchTriggeredRef.current = false; // 重置触发标志
+                                        }}
+                                        onTouchEnd={() => {
+                                            setIsCardDragging(false);
+                                            cardSwitchTriggeredRef.current = false; // 重置触发标志
+                                        }}
                                     >
                                         {/* 所有卡牌環繞成圓形 */}
                                         {allCertificates.map((cert, index) => {
